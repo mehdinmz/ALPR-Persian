@@ -1,107 +1,271 @@
-import pathlib
+from pathlib import Path
+
+import numpy as np
 import tensorflow as tf
 
-# ==========================================
-# ۱. تنظیم کاراکترها و دیکشنری (Vocabulary)
-# ==========================================
-# لیست کامل کاراکترهای ممکن در پلاک‌ها (اعداد فارسی + حروف)
-DIGITS = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"]
+
+# ============================================================
+# VOCABULARY
+# ============================================================
+
+DIGITS = [
+    "۰", "۱", "۲", "۳", "۴",
+    "۵", "۶", "۷", "۸", "۹"
+]
+
 LETTERS = [
-    "الف", "ب", "پ", "ت", "ث", "ج", "چ", "ح", "خ", "د", "ذ", "ر",
-    "ز", "ژ", "س", "ش", "ص", "ض", "ط", "ظ", "ع", "غ", "ف", "ق",
-    "ک", "گ", "ل", "م", "ن", "و", "ه", "ی"
+    "الف", "ب", "پ", "ت", "ث", "ج", "چ", "ح", "خ", "د",
+    "ذ", "ر", "ز", "ژ", "س", "ش", "ص", "ض", "ط", "ظ",
+    "ع", "غ", "ف", "ق", "ک", "گ", "ل", "م", "ن", "و",
+    "ه", "ی"
 ]
 
 VOCABULARY = DIGITS + LETTERS
-MAX_LABEL_LEN = 10  # طول دنباله (مثلاً ۲ رقم + ۱ حرف + ۳ رقم + ۲ رقم + فاصله)
 
-# ساخت لایه StringLookup برای نگاشت کاراکترها به عدد
-char_to_num = tf.keras.layers.StringLookup(
-    vocabulary=VOCABULARY, mask_token=None, num_oov_indices=1  # index 0 reserved/OOV
-)
+# ID = 1 ... N
+# 0 = padding
+TOKEN_TO_ID = {
+    token: i + 1
+    for i, token in enumerate(VOCABULARY)
+}
 
-# ==========================================
-# ۲. تابع خواندن labels.txt
-# ==========================================
+ID_TO_TOKEN = {
+    i + 1: token
+    for i, token in enumerate(VOCABULARY)
+}
+
+MAX_LABEL_LEN = 8
+
+
+# ============================================================
+# LABEL ENCODING
+# ============================================================
+
+def encode_label(label_text: str):
+    """
+    Input example:
+
+        ۱۲ الف ۳۴۵ ۴۸
+
+    تبدیل می‌شود به:
+
+        ['۱', '۲', 'الف', '۳', '۴', '۵', '۴', '۸']
+
+    'الف' یک token است، نه سه character.
+    """
+
+    parts = label_text.strip().split()
+
+    if len(parts) != 4:
+        raise ValueError(
+            f"Invalid label format: {label_text!r}"
+        )
+
+    first_two = list(parts[0])
+    letter = parts[1]
+    middle_three = list(parts[2])
+    regional_code = list(parts[3])
+
+    tokens = (
+        first_two
+        + [letter]
+        + middle_three
+        + regional_code
+    )
+
+    if len(tokens) != MAX_LABEL_LEN:
+        raise ValueError(
+            f"Expected {MAX_LABEL_LEN} tokens, "
+            f"got {len(tokens)} for label {label_text!r}"
+        )
+
+    encoded = []
+
+    for token in tokens:
+        if token not in TOKEN_TO_ID:
+            raise ValueError(
+                f"Unknown token {token!r} "
+                f"in label {label_text!r}"
+            )
+
+        encoded.append(TOKEN_TO_ID[token])
+
+    return np.asarray(
+        encoded,
+        dtype=np.int32
+    )
+
+
+# ============================================================
+# LOAD LABELS
+# ============================================================
+
 def load_labels_file(data_dir):
-    data_dir = pathlib.Path(data_dir)
+    data_dir = Path(data_dir)
+
     labels_path = data_dir / "labels.txt"
     images_dir = data_dir / "images"
+
+    if not labels_path.exists():
+        raise FileNotFoundError(
+            f"labels.txt not found:\n{labels_path.resolve()}"
+        )
 
     img_paths = []
     labels = []
 
-    with open(labels_path, "r", encoding="utf-8") as f:
-        for line in f:
+    with open(
+        labels_path,
+        "r",
+        encoding="utf-8"
+    ) as f:
+
+        for line_number, line in enumerate(f, start=1):
+
             line = line.strip()
+
             if not line:
                 continue
-            parts = line.split(",")
-            img_name = parts[0]
-            # حذف فاصله‌های اضافی و یکدست‌سازی لیبل
-            label_text = parts[1].replace(" ", "")
 
-            img_paths.append(str(images_dir / img_name))
-            labels.append(label_text)
+            parts = line.split(",", 1)
 
-    return img_paths, labels
+            if len(parts) != 2:
+                raise ValueError(
+                    f"Invalid labels.txt line "
+                    f"{line_number}: {line!r}"
+                )
 
-# ==========================================
-# ۳. تابع پیش‌پردازش هر نمونه (Image & Label)
-# ==========================================
-def process_sample(img_path, label_text):
-    # الف) پردازش تصویر
-    img = tf.io.read_file(img_path)
-    img = tf.io.decode_png(img, channels=1)
-    img = tf.image.convert_image_dtype(img, tf.float32)  # نرمال‌سازی بین 0.0 تا 1.0
-    img = tf.image.resize(img, [32, 160])  # (Height=32, Width=160)
+            img_name, label_text = parts
 
-    # ب) پردازش متن و تبدیل به اعداد (Tensor)
-    chars = tf.strings.unicode_split(label_text, input_encoding="UTF-8")
-    label_encoded = char_to_num(chars)
+            img_path = images_dir / img_name
 
-    # ج) پد کردن (Padding) تا طول ثابت MAX_LABEL_LEN
-    pad_len = MAX_LABEL_LEN - tf.shape(label_encoded)[0]
-    label_encoded = tf.pad(label_encoded, [[0, pad_len]], constant_values=0)
+            if not img_path.exists():
+                raise FileNotFoundError(
+                    f"Image referenced in labels.txt "
+                    f"does not exist:\n{img_path}"
+                )
 
-    return {"image_input": img}, label_encoded
+            encoded_label = encode_label(label_text)
 
-# ==========================================
-# ۴. تابع اصلی ساخت tf.data.Dataset
-# ==========================================
-def get_dataset(data_dir="../data/synthetic_plates_crnn", batch_size=32, validation_split=0.2):
-    # ۱. دریافت تمام مسیرها و لیبل‌ها
+            img_paths.append(str(img_path))
+            labels.append(encoded_label)
+
+    return (
+        np.asarray(img_paths),
+        np.asarray(labels, dtype=np.int32)
+    )
+
+
+# ============================================================
+# IMAGE PROCESSING
+# ============================================================
+
+def process_sample(img_path, label):
+
+    image = tf.io.read_file(img_path)
+
+    image = tf.io.decode_png(
+        image,
+        channels=1
+    )
+
+    image = tf.image.convert_image_dtype(
+        image,
+        tf.float32
+    )
+
+    image = tf.image.resize(
+        image,
+        [32, 160]
+    )
+
+    return {
+        "image_input": image
+    }, label
+
+
+# ============================================================
+# DATASET
+# ============================================================
+
+def get_dataset(
+    data_dir=None,
+    batch_size=64,
+    validation_split=0.2,
+    seed=42
+):
+
+    if data_dir is None:
+        data_dir = (
+            Path(__file__).resolve().parent.parent
+            / "data"
+            / "synthetic_plates_crnn"
+        )
+
     img_paths, labels = load_labels_file(data_dir)
 
     num_samples = len(img_paths)
-    val_size = int(num_samples * validation_split)
 
-    # آرایش تصادفی داده‌ها
-    indices = tf.range(num_samples)
-    indices = tf.random.shuffle(indices, seed=42)
+    if num_samples == 0:
+        raise RuntimeError(
+            "Dataset is empty."
+        )
 
-    img_paths = tf.gather(img_paths, indices)
-    labels = tf.gather(labels, indices)
+    rng = np.random.default_rng(seed)
 
-    # تقسیم به Train و Validation
-    train_paths, val_paths = img_paths[val_size:], img_paths[:val_size]
-    train_labels, val_labels = labels[val_size:], labels[:val_size]
+    indices = np.arange(num_samples)
 
-    # ساخت دیتاست
-    train_ds = tf.data.Dataset.from_tensor_slices((train_paths, train_labels))
-    val_ds = tf.data.Dataset.from_tensor_slices((val_paths, val_labels))
+    rng.shuffle(indices)
+
+    val_size = int(
+        num_samples * validation_split
+    )
+
+    val_indices = indices[:val_size]
+    train_indices = indices[val_size:]
+
+    train_paths = img_paths[train_indices]
+    train_labels = labels[train_indices]
+
+    val_paths = img_paths[val_indices]
+    val_labels = labels[val_indices]
+
+    train_ds = tf.data.Dataset.from_tensor_slices(
+        (
+            train_paths,
+            train_labels
+        )
+    )
+
+    val_ds = tf.data.Dataset.from_tensor_slices(
+        (
+            val_paths,
+            val_labels
+        )
+    )
 
     AUTOTUNE = tf.data.AUTOTUNE
 
     train_ds = (
-        train_ds.map(process_sample, num_parallel_calls=AUTOTUNE)
-        .shuffle(buffer_size=5000)
+        train_ds
+        .shuffle(
+            min(len(train_paths), 5000),
+            seed=seed
+        )
+        .map(
+            process_sample,
+            num_parallel_calls=AUTOTUNE
+        )
         .batch(batch_size)
         .prefetch(AUTOTUNE)
     )
 
     val_ds = (
-        val_ds.map(process_sample, num_parallel_calls=AUTOTUNE)
+        val_ds
+        .map(
+            process_sample,
+            num_parallel_calls=AUTOTUNE
+        )
         .batch(batch_size)
         .prefetch(AUTOTUNE)
     )

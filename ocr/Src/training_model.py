@@ -1,54 +1,163 @@
-import tensorflow as tf
-from model import build_crnn_model
-import argparse
-import sys
 from pathlib import Path
-from Ldataset import get_dataset, VOCABULARY
-DATA_DIR = Path("../data").resolve()
 
-model = build_crnn_model(input_shape=(32, 128, 1), num_classes=45)
+import tensorflow as tf
+
+from model import build_crnn_model
+from Ldataset import (
+    get_dataset,
+    VOCABULARY,
+    MAX_LABEL_LEN,
+)
+
+
+# ============================================================
+# PATHS
+# ============================================================
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data" / "synthetic_plates_crnn"
+
+MODEL_DIR = PROJECT_ROOT / "models"
+MODEL_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+BEST_MODEL_PATH = MODEL_DIR / "best_crnn_model.keras"
+
+
+# ============================================================
+# DATASET
+# ============================================================
+
+train_ds, val_ds = get_dataset(
+    data_dir=DATA_DIR,
+    batch_size=64,
+    validation_split=0.2,
+    seed=42,
+)
+
+
+# ============================================================
+# MODEL
+# ============================================================
+
+# 43 توکن:
+# 10 digits + 33 letters
+#
+# + 1 CTC blank
+#
+# => 44 classes
+
+NUM_CLASSES = len(VOCABULARY) + 1
+
+model = build_crnn_model(
+    input_shape=(32, 160, 1),
+    num_classes=NUM_CLASSES,
+)
+
 model.summary()
 
 
-# 1. دریافت دیتاست‌ها
-train_ds, val_ds = get_dataset("../data/synthetic_plates_crnn", batch_size=64)
+# ============================================================
+# CTC LOSS
+# ============================================================
 
-# 2. ساخت مدل (ابعاد تصویر 32x160 و تعداد کلاس‌ها برابر با طول Vocabulary + 1)
-num_classes = len(VOCABULARY) + 2  # تعداد کل کاراکترها + OOV + Blank token در CTC
-model = build_crnn_model(input_shape=(32, 160, 1), num_classes=num_classes)
+def ctc_loss(y_true, y_pred):
 
-# 3. کامپایل مدل با CTC Loss
-def ctc_loss_lambda(y_true, y_pred):
-    batch_len = tf.cast(tf.shape(y_true)[0], dtype="int64")
-    input_length = tf.cast(tf.shape(y_pred)[1], dtype="int64")
-    label_length = tf.cast(tf.shape(y_true)[1], dtype="int64")
+    batch_size = tf.shape(y_true)[0]
 
-    input_length = input_length * tf.ones(shape=(batch_len, 1), dtype="int64")
-    label_length = label_length * tf.ones(shape=(batch_len, 1), dtype="int64")
+    input_length = tf.shape(y_pred)[1]
 
-    return tf.keras.backend.ctc_batch_cost(y_true, y_pred, input_length, label_length)
-def train():
-    checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
-        filepath="best_crnn_model.keras", # ذخیره مدل کامل با فرمت جدید Keras
-        monitor="val_loss",
-        save_best_only=True,               # فقط زمانی که val_loss بهتر شد ذخیره کن
-        mode="min",
-        verbose=0
-    )
-    optimizer = tf.keras.optimizers.Adam(
-        learning_rate=0.0005,
-        clipnorm=1.0  # محدود کردن سقف گرادیان‌ها
-    )
-    model.compile(optimizer=optimizer, loss=ctc_loss_lambda)
+    label_length = tf.shape(y_true)[1]
 
-    # 4. اجرا
-    history = model.fit(
-        train_ds,
-        validation_data=val_ds,
-        epochs=25,
-        callbacks=[checkpoint_cb] # اضافه کردن Callback به fit
+    input_length = tf.cast(
+        input_length,
+        dtype=tf.int64
     )
 
-    # 5. دستی ذخیره کردن مدل در انتهای آموزش (در صورت نیاز)
-    model.save("best_crnn_model.keras")
-    print("مدل با موفقیت ذخیره شد!")
+    label_length = tf.cast(
+        label_length,
+        dtype=tf.int64
+    )
+
+    input_length = tf.ones(
+        shape=(batch_size, 1),
+        dtype=tf.int64
+    ) * input_length
+
+    label_length = tf.ones(
+        shape=(batch_size, 1),
+        dtype=tf.int64
+    ) * label_length
+
+    return tf.keras.backend.ctc_batch_cost(
+        y_true,
+        y_pred,
+        input_length,
+        label_length,
+    )
+
+
+# ============================================================
+# COMPILE
+# ============================================================
+
+optimizer = tf.keras.optimizers.Adam(
+    learning_rate=0.0005,
+    clipnorm=1.0,
+)
+
+model.compile(
+    optimizer=optimizer,
+    loss=ctc_loss,
+)
+
+
+# ============================================================
+# CALLBACKS
+# ============================================================
+
+checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
+    filepath=str(BEST_MODEL_PATH),
+    monitor="val_loss",
+    save_best_only=True,
+    mode="min",
+    verbose=1,
+)
+
+early_stopping_cb = tf.keras.callbacks.EarlyStopping(
+    monitor="val_loss",
+    patience=5,
+    restore_best_weights=True,
+    verbose=1,
+)
+
+
+# ============================================================
+# TRAIN
+# ============================================================
+
+history = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=25,
+    callbacks=[
+        checkpoint_cb,
+        early_stopping_cb,
+    ],
+)
+
+
+# ============================================================
+# SAVE
+# ============================================================
+
+model.save(
+    MODEL_DIR / "final_crnn_model.keras"
+)
+
+print(
+    f"Best model saved to:\n"
+    f"{BEST_MODEL_PATH}"
+)
