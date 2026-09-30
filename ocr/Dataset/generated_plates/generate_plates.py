@@ -9,60 +9,49 @@ import imutils
 import numpy as np
 from tqdm import tqdm
 
-# Characters of Letters and Numbers in Plates
-numbers = [str(i) for i in range(0, 10)]
 
-# Fonts and Templates
-fonts = ['roya_bold']
-t = "C:\\Users\\MEHDI\\Desktop\\iranian-license-plate-recognition\\Dataset\\Templates"
-templates = [
-    os.path.basename(os.path.splitext(template)[0])
-    for template in os.listdir(t)
-    if template.endswith('.png')
-    and template not in ['tashrifat.png', 'template-sepah.png', 'template-police.png']
-]
-
-# Noises
-n = "C:\\Users\\MEHDI\\Desktop\\iranian-license-plate-recognition\\Dataset\\Noises"
-noises = os.listdir(n)
-transformations = ['rotate_right', 'rotate_left', 'zoom_in', 'zoom_out', 'prespective_transform']
-
-# Count of permutations
-permutations = 1
-
-def getPlateName(n1, n2, l, n3, n4, n5, c1, c2):
-    return f'{n1}{n2}{l}{n3}{n4}{n5}_{c1}{c2}'
+def getPlateName(n1, n2, l, n3, n4, n5, c1, c2,base = False):
+    if base:
+        return f'{n1}{n2}{l}{n3}{n4}{n5}_{c1}{c2}'
+    else:
+        return f'{n1}{n2}_{n3}{n4}{n5}'
 
 def getGlyphAddress(font, glyphName):
-    return f'../Glyphs/{font}/{glyphName}_trim.png'
+    t = "..\\"
+    return f'{t}Glyphs/{font}/{glyphName}_trim.png'
 
-def getNewPlate(template_name, available_letters):
+def getNewPlate(template_name , available_letters = ["sin", "sad", "beh", "jim", "dal", "ta", "ghaf", "lam","mim","noon","vav","he", "ye"], numbers = [0,1,2,3,4,5,6,7,8,9]):
+    # ب ج د س
+    # ص ط ق ل
+    # م ن و ه‍ ی
     """
     تولید ساختار کامل پلاک (۸ کاراکتر):
     [n1, n2, letter, n3, n4, n5, city1, city2]
     """
     valid_letters = available_letters.copy()
-    
-    # کنترل محدودیت حرف 'ع' (EIN / EA): فقط برای قالب‌های عمومی/زرد
-    is_public_template = 'public' in template_name.lower() or 'yellow' in template_name.lower()
-    
-    if not is_public_template:
-        valid_letters = [l for l in valid_letters if l not in ['EIN', 'EA', 'EIN_trim']]
-
     selected_letter = random.choice(valid_letters) if valid_letters else random.choice(available_letters)
 
     return [
-        random.choice(numbers),  # n1
-        random.choice(numbers),  # n2
+        random.choice(range(1, 10)),  # n1
+        random.choice(range(1, 10)),  # n2
         selected_letter,         # letter
-        random.choice(numbers),  # n3
-        random.choice(numbers),  # n4
-        random.choice(numbers),  # n5
-        random.choice(numbers),  # city_code_1
-        random.choice(numbers)   # city_code_2
+        random.choice(range(1, 10)),  # n3
+        random.choice(range(1, 10)),  # n4
+        random.choice(range(1, 10)),  # n5
+        random.choice(range(1, 10)),  # city_code_1
+        0
+        # random.choice(numbers)   # city_code_2
     ]
 
 def applyNoise(plate):
+    # Noises
+    n = "..\\Noises"
+    noises = os.listdir(n)
+    transformations = ['rotate_right', 'rotate_left', 'zoom_in', 'zoom_out', 'prespective_transform']
+
+    # Count of permutations
+    permutations = 1
+
     background = plate.convert("RGBA")
     noisyTemplates = []
     for noise in noises:
@@ -106,62 +95,186 @@ def applyTransforms(plate):
     return transformedTemplates
 
 
-idCounter = 0
-total_steps = len(fonts) * len(templates) * permutations * (1 + len(noises) * (1 + (len(transformations) - 1) * 3))
+
+total_steps = 100 #len(fonts) * len(templates) * permutations * (1 + len(noises) * (1 + (len(transformations) - 1) * 3))
 fontsProgBar = tqdm(total=total_steps, desc='Generating Plate...')
 
-for font in fonts:
-    if not os.path.exists(font):
-        os.mkdir(font)
+# for font in fonts:
+#     if not os.path.exists(font):
+#         os.mkdir(font)
+def main():
+    # Characters of Letters and Numbers in Plates
+    numbers = [str(i) for i in range(0, 10)]
 
+    # Fonts and Templates
+    font = 'roya_bold'
+    t = "..\\Templates\\"
+    #defining cursor for each template type
+    cursor = {
+        "dolati": {"x":65,"y":30,"s_2r":6, "s_3r":7, "s_l":32},
+        "gozar": {"x":65,"y":30,"s_2r":5, "s_3r":5, "s_l":30},
+        "nezami": {"x":73,"y":30,"s_2r":5, "s_3r":5, "s_l":27},
+        "malolin va janbazan": {"x":70,"y":32,"s_2r":6, "s_3r":7, "s_l":24},
+        "shakhsi": {"x":73,"y":30,"s_2r":5, "s_3r":6, "s_l":23},
+        "siasi": {"x":70,"y":30,"s_2r":5, "s_3r":8, "s_l":22},
+        "tranzit": {"x":50,"y":5,"s_2r":5, "s_3r":7, "s_l":19},
+        "tashrifat": {"x":332,"y":30,"s_2r":4, "s_3r":4, "s_l":-29},
+        "ommomi": {"x":65,"y":30,"s_2r":6, "s_3r":7, "s_l":30},
+    }
+
+    idCounter = 0
     letters = []
     with open(f'../Fonts/{font}_namesMap.csv') as nameMapCsv:
         reader = csv.reader(nameMapCsv)
         next(reader)
         letters = [rows[1] for rows in reader]
 
-    for template in templates:
-        for i in range(permutations):
-            idCounter += 1
+    for templates in os.listdir(t):
+
+        base = templates in ['shakhsi', 'malolin va janbazan', 'tranzit']
+
+        for template in os.listdir(t + templates):
+
+            white = template in [
+                'template-dolati.png',
+                'template-Niromosalah.png',
+                'template-defa.png',
+                'template-tashrifat.png'
+            ]
 
             # دریافت ساختار کامل ۸ کاراکتری پلاک
-            plate = getNewPlate(template, letters)
-            plateName = getPlateName(*plate)
+            plate = getNewPlate(template)
+            plateName = getPlateName(*plate, base=base)
 
-            # خواندن تمام گلیف‌ها (اطمینان از وجود ۸ تصویر گلیف)
-            glyphImages = [Image.open(getGlyphAddress(font, g)).convert("RGBA") for g in plate]
+            # خواندن تمام گلیف‌ها
+            # اطمینان از وجود ۸ تصویر گلیف
+            glyphImages = [
+                Image.open(getGlyphAddress(font, g)).convert("RGBA")
+                for g in plate
+            ]
 
-            newPlate = Image.new('RGBA', (600, 132), (0, 0, 0, 0))
-            background = Image.open(f'../Templates/{template}.png').convert("RGBA")
+            # اگر پلاک جزو پلاک‌های سفید است،
+            # رنگ گلیف‌ها را از سیاه به سفید تغییر بده
+            if white:
+
+                whiteGlyphImages = []
+
+                for glyph in glyphImages:
+
+                    # جدا کردن کانال‌های RGBA
+                    r, g, b, a = glyph.split()
+
+                    # تبدیل رنگ کاراکتر از سیاه به سفید
+                    # کانال Alpha بدون تغییر باقی می‌ماند
+                    whiteGlyph = Image.new(
+                        "RGBA",
+                        glyph.size,
+                        (255, 255, 255, 0)
+                    )
+
+                    whiteGlyph.putalpha(a)
+
+                    whiteGlyphImages.append(whiteGlyph)
+
+                glyphImages = whiteGlyphImages
+
+            print(templates, template)
+
+            newPlate = Image.new(
+                'RGBA',
+                (600, 132),
+                (0, 0, 0, 0)
+            )
+
+            background = Image.open(
+                f'{t}{templates}\\{template}'
+            ).convert("RGBA")
+
             newPlate.paste(background, (0, 0))
 
-            # --- چیدمان قطعی و تضمین‌شده برای تمام ۸ کاراکتر ---
-            
-            # ۱. بخش ۲ رقم اول (سمت چپ)
-            x_cursor = 70
-            newPlate.paste(glyphImages[0], (x_cursor, 25), mask=glyphImages[0])
-            x_cursor += glyphImages[0].size[0] + 5
-            
-            newPlate.paste(glyphImages[1], (x_cursor, 25), mask=glyphImages[1])
-            x_cursor += glyphImages[1].size[0] + 25  # فاصله تا حرف
+            x_cursor = cursor[templates]["x"]
+            y_cursor = cursor[templates]["y"]
+
+            s_2r = cursor[templates]["s_2r"]
+            s_3r = cursor[templates]["s_3r"]
+            s_l = cursor[templates]["s_l"]
+
+            newPlate.paste(
+                glyphImages[0],
+                (x_cursor, y_cursor),
+                mask=glyphImages[0]
+            )
+
+            x_cursor += 50 + s_2r
+
+            # print(x_cursor)
+
+            newPlate.paste(
+                glyphImages[1],
+                (x_cursor, y_cursor),
+                mask=glyphImages[1]
+            )
+
+            x_cursor += 45 + s_l  # فاصله تا حرف
+
+            # print(x_cursor)
 
             # ۲. بخش حرف وسط
-            newPlate.paste(glyphImages[2], (x_cursor, 30), mask=glyphImages[2])
-            x_cursor += glyphImages[2].size[0] + 25  # فاصله تا ۳ رقم راست
+            if base and templates != 'malolin va janbazan':
 
-            # ۳. بخش ۳ رقم راست
+                newPlate.paste(
+                    glyphImages[2],
+                    (x_cursor, y_cursor + 3),
+                    mask=glyphImages[2]
+                )
+
+            x_cursor += 65 + s_l  # فاصله تا ۳ رقم راست
+
+            # print("size", glyphImages[2].size[0])
+
             for idx in [3, 4, 5]:
-                newPlate.paste(glyphImages[idx], (x_cursor, 25), mask=glyphImages[idx])
-                x_cursor += glyphImages[idx].size[0] + 5
 
-            # ۴. بخش ۲ رقم کد شهر (مختصات دقیق و ثابت کادر مربع سمت راست)
-            # تعیین نقطه ثابت برای شروع کادر کد شهر روی قالب ۶۰۰x۱۳۲
-            x_city_start = 450
-            newPlate.paste(glyphImages[6], (x_city_start, 25), mask=glyphImages[6])
-            
-            x_city_second = x_city_start + glyphImages[6].size[0] + 5
-            newPlate.paste(glyphImages[7], (x_city_second, 25), mask=glyphImages[7])
+                newPlate.paste(
+                    glyphImages[idx],
+                    (x_cursor, y_cursor),
+                    mask=glyphImages[idx]
+                )
 
+                x_cursor += 50 + s_3r
+
+                # print(x_cursor)
+
+            # ۴. بخش ۲ رقم کد شهر
+            # مختصات دقیق و ثابت کادر مربع سمت راست
+
+            if base:
+
+                x_city_start = 480
+
+                newPlate.paste(
+                    glyphImages[6],
+                    (x_city_start, y_cursor + 5),
+                    mask=glyphImages[6]
+                )
+
+                # print(plate[-1])
+
+                if plate[-1] == 0:
+
+                    # print(y_cursor)
+                    y_cursor -= -23
+
+                x_city_second = x_city_start + 45 + s_2r
+
+                newPlate.paste(
+                    glyphImages[7],
+                    (x_city_second, y_cursor + 5),
+                    mask=glyphImages[7]
+                )
+
+                # print(x_city_second)
+
+            # Image.Image.show(newPlate)
             # ذخیره‌سازی پلاک اصلی
             _newPlate = newPlate.resize((312, 70), PIL.Image.LANCZOS)
             _newPlate.save(f"{font}/{plateName}_{template.split('-')[-1]}_{idCounter}.png")
@@ -180,7 +293,7 @@ for font in fonts:
                 for transformedTemplate in transformedTemplates:
                     idCounter += 1
                     _transformedTemplate = transformedTemplate.resize((312, 70), PIL.Image.LANCZOS)
-                    _transformedTemplate.save(f"{font}/{plateName}_{template.split('-')[-1]}_{idCounter}.png")
+                    _transformedTemplate.save(f"{font}/{plateName}_{idCounter}.png")
                     fontsProgBar.update(1)
-
+main()
 fontsProgBar.close()
