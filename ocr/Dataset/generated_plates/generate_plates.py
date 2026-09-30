@@ -39,8 +39,8 @@ def getNewPlate(template_name , available_letters = ["sin", "sad", "beh", "jim",
         random.choice(range(1, 10)),  # n4
         random.choice(range(1, 10)),  # n5
         random.choice(range(1, 10)),  # city_code_1
-        0
-        # random.choice(numbers)   # city_code_2
+        # 0
+        random.choice(numbers)   # city_code_2
     ]
 
 def applyNoise(plate):
@@ -121,7 +121,14 @@ def main():
         "tashrifat": {"x":332,"y":30,"s_2r":4, "s_3r":4, "s_l":-29},
         "ommomi": {"x":65,"y":30,"s_2r":6, "s_3r":7, "s_l":30},
     }
-
+    whites = [
+                'template-dolati.png',
+                'template-Niromosalah.png',
+                'template-defa.png',
+                'template-tashrifat.png',
+                'template-sepah.png',
+                'template-police.png'
+            ]
     idCounter = 0
     letters = []
     with open(f'../Fonts/{font}_namesMap.csv') as nameMapCsv:
@@ -135,12 +142,7 @@ def main():
 
         for template in os.listdir(t + templates):
 
-            white = template in [
-                'template-dolati.png',
-                'template-Niromosalah.png',
-                'template-defa.png',
-                'template-tashrifat.png'
-            ]
+            white = template in whites
 
             # دریافت ساختار کامل ۸ کاراکتری پلاک
             plate = getNewPlate(template)
