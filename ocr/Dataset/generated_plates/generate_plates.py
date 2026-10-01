@@ -48,6 +48,11 @@ def getNewPlate(template_name):
     selected_letter = random.choice(valid_letters)
     # print(f"Selected letter for template '{template_name}': {selected_letter}")
     #full = is_shakhsi
+    city_code_1 = random.choice(range(1, 10))
+    if template_name in ['sepah', 'police', 'defa', 'artesh', 'Niromosalah', 'diplomat', 'service']:
+        city_code_2 = random.choice((0, city_code_1))   # Ensure city_code_2 is not zero for these templates
+    else:
+        city_code_2 = random.choice(range(0, 10))
     ret = [
         random.choice(range(1, 10)),  # n1
         random.choice(range(1, 10)),  # n2
@@ -55,8 +60,8 @@ def getNewPlate(template_name):
         random.choice(range(1, 10)),  # n3
         random.choice(range(1, 10)),  # n4
         random.choice(range(1, 10)),  # n5
-        random.choice(range(1, 10)),  # city_code_1
-        random.choice(range(0, 10))   # city_code_2
+        city_code_1,  # city_code_1
+        city_code_2   # city_code_2
         #0
     ]
     print("plate:",ret)
@@ -165,7 +170,7 @@ def main():
 
     for templates in os.listdir(t):
 
-        base = templates in ['shakhsi', 'malolin va janbazan', 'tranzit']
+        base = templates in ['shakhsi', 'malolin va janbazan', 'tranzit', 'ommomi', 'dolati','nezami','siasi']
 
         for template in os.listdir(t + templates):
             idCounter = 0
@@ -289,7 +294,7 @@ def main():
                         # print(y_cursor)
                         y_cursor -= -23
 
-                    x_city_second = x_city_start + 45 + s_2r
+                    x_city_second = x_city_start + 50 + s_2r
 
                     newPlate.paste(
                         glyphImages[7],
