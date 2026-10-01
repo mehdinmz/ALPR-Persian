@@ -294,7 +294,7 @@ def main():
                         # print(y_cursor)
                         y_cursor -= -23
 
-                    x_city_second = x_city_start + 50 + s_2r
+                    x_city_second = x_city_start + 47 + s_2r
 
                     newPlate.paste(
                         glyphImages[7],
