@@ -125,6 +125,9 @@ def load_glyphs(font,plate):
             res.append(Image.open(getGlyphAddress(font, g)).convert("RGBA"))
          else:
             res.append(Image.new("RGBA", (50, 100), (0, 0, 0, 0)))  # Create a transparent image if glyph doesn't exist
+    if "gaf" in plate :
+         res[-1] = res[-1].resize((res[-1].width//3, res[-1].height//3), PIL.Image.LANCZOS)
+         res[-2] = res[-2].resize((res[-2].width//3, res[-2].height//3), PIL.Image.LANCZOS)
     return res
 
 
@@ -143,15 +146,15 @@ def main():
     t = "..\\Templates\\"
     #defining cursor for each template type
     cursor = {
-        "dolati": {"x":65,"y":30,"s_2r":6, "s_3r":7, "s_l":32},
-        "gozar": {"x":65,"y":30,"s_2r":5, "s_3r":5, "s_l":30},
-        "nezami": {"x":73,"y":30,"s_2r":5, "s_3r":5, "s_l":27},
-        "malolin va janbazan": {"x":70,"y":32,"s_2r":6, "s_3r":7, "s_l":24},
-        "shakhsi": {"x":73,"y":30,"s_2r":5, "s_3r":6, "s_l":23},
-        "siasi": {"x":70,"y":30,"s_2r":5, "s_3r":8, "s_l":22},
-        "tranzit": {"x":50,"y":5,"s_2r":5, "s_3r":7, "s_l":19},
-        "tashrifat": {"x":332,"y":30,"s_2r":4, "s_3r":4, "s_l":-29},
-        "ommomi": {"x":65,"y":30,"s_2r":6, "s_3r":7, "s_l":30},
+        "dolati": {"x":65,"y":30,"s_2r":6, "s_3r":7, "s_l":32,"s_l2":47,"y2":30,"z_tel":-23},
+        "gozar": {"x":65,"y":30,"s_2r":5, "s_3r":5, "s_l":30,"s_l2":23,"y2":30,"z_tel":-15},
+        "nezami": {"x":73,"y":30,"s_2r":5, "s_3r":5, "s_l":27,"s_l2":47,"y2":30,"z_tel":-23},
+        "malolin va janbazan": {"x":70,"y":32,"s_2r":6, "s_3r":7, "s_l":24,"s_l2":47,"y2":30,"z_tel":-23},
+        "shakhsi": {"x":73,"y":30,"s_2r":5, "s_3r":5, "s_l":24,"s_l2":47,"y2":30,"z_tel":-23},
+        "siasi": {"x":70,"y":30,"s_2r":5, "s_3r":8, "s_l":22,"s_l2":47,"y2":30,"z_tel":-23},
+        "tranzit": {"x":50,"y":5,"s_2r":5, "s_3r":7, "s_l":19,"s_l2":47,"y2":5,"z_tel":-23},
+        "tashrifat": {"x":332,"y":30,"s_2r":4, "s_3r":4, "s_l":-29,"s_l2":47,"y2":30,"z_tel":-23},
+        "ommomi": {"x":65,"y":30,"s_2r":6, "s_3r":7, "s_l":30,"s_l2":47,"y2":30,"z_tel":-23},
     }
     whites = [
                 'template-dolati.png',
@@ -170,8 +173,6 @@ def main():
 
     for templates in os.listdir(t):
 
-        base = templates in ['shakhsi', 'malolin va janbazan', 'tranzit', 'ommomi', 'dolati','nezami','siasi']
-
         for template in os.listdir(t + templates):
             idCounter = 0
             white = template in whites
@@ -183,149 +184,149 @@ def main():
             # خواندن تمام گلیف‌ها
             # اطمینان از وجود ۸ تصویر گلیف
             glyphImages = load_glyphs(font,plate)
-            if glyphImages[2] is not None:
+            # if glyphImages[2] is not None:
             # اگر پلاک جزو پلاک‌های سفید است，
             # رنگ گلیف‌ها را از سیاه به سفید تغییر بده
-                if white:
+            if white:
 
-                    whiteGlyphImages = []
+                whiteGlyphImages = []
 
-                    for glyph in glyphImages:
-                        # جدا کردن کانال‌های RGBA
-                        r, g, b, a = glyph.split()
+                for glyph in glyphImages:
+                    # جدا کردن کانال‌های RGBA
+                    r, g, b, a = glyph.split()
 
-                        # تبدیل رنگ کاراکتر از سیاه به سفید
-                        # کانال Alpha بدون تغییر باقی می‌ماند
-                        whiteGlyph = Image.new(
-                            "RGBA",
-                            glyph.size,
-                            (255, 255, 255, 0)
-                        )
+                    # تبدیل رنگ کاراکتر از سیاه به سفید
+                    # کانال Alpha بدون تغییر باقی می‌ماند
+                    whiteGlyph = Image.new(
+                        "RGBA",
+                        glyph.size,
+                        (255, 255, 255, 0)
+                    )
 
-                        whiteGlyph.putalpha(a)
+                    whiteGlyph.putalpha(a)
 
-                        whiteGlyphImages.append(whiteGlyph)
+                    whiteGlyphImages.append(whiteGlyph)
 
-                    glyphImages = whiteGlyphImages
+                glyphImages = whiteGlyphImages
 
-                print(templates, template,plateName)
+            print(templates, template,plateName)
 
-                newPlate = Image.new(
-                    'RGBA',
-                    (600, 132),
-                    (0, 0, 0, 0)
-                )
+            newPlate = Image.new(
+                'RGBA',
+                (600, 132),
+                (0, 0, 0, 0)
+            )
 
-                background = Image.open(
-                    f'{t}{templates}\\{template}'
-                ).convert("RGBA")
+            background = Image.open(
+                f'{t}{templates}\\{template}'
+            ).convert("RGBA")
 
-                newPlate.paste(background, (0, 0))
+            newPlate.paste(background, (0, 0))
 
-                x_cursor = cursor[templates]["x"]
-                y_cursor = cursor[templates]["y"]
+            x_cursor = cursor[templates]["x"]
+            y_cursor = cursor[templates]["y"]
 
-                s_2r = cursor[templates]["s_2r"]
-                s_3r = cursor[templates]["s_3r"]
-                s_l = cursor[templates]["s_l"]
+            s_2r = cursor[templates]["s_2r"]
+            s_3r = cursor[templates]["s_3r"]
+            s_l = cursor[templates]["s_l"]
+            s_l2 = cursor[templates]["s_l2"]
+            z_tel = cursor[templates]["z_tel"]
+            newPlate.paste(
+                glyphImages[0],
+                (x_cursor, y_cursor),
+                mask=glyphImages[0]
+            )
+
+            x_cursor += 50 + s_2r
+
+            # print(x_cursor)
+
+            newPlate.paste(
+                glyphImages[1],
+                (x_cursor, y_cursor),
+                mask=glyphImages[1]
+            )
+
+            x_cursor += 45 + s_l  # فاصله تا حرف
+
+            # print(x_cursor)
+
+            # ۲. بخش حرف وسط
+            if templates != 'malolin va janbazan':
 
                 newPlate.paste(
-                    glyphImages[0],
-                    (x_cursor, y_cursor),
-                    mask=glyphImages[0]
+                    glyphImages[2],
+                    (x_cursor, y_cursor + 3),
+                    mask=glyphImages[2]
                 )
 
-                x_cursor += 50 + s_2r
+            x_cursor += 65 + s_l  # فاصله تا ۳ رقم راست
+
+            # print("size", glyphImages[2].size[0])
+
+            for idx in [3, 4, 5]:
+
+                newPlate.paste(
+                    glyphImages[idx],
+                    (x_cursor, y_cursor),
+                    mask=glyphImages[idx]
+                )
+
+                x_cursor += 50 + s_3r
 
                 # print(x_cursor)
 
-                newPlate.paste(
-                    glyphImages[1],
-                    (x_cursor, y_cursor),
-                    mask=glyphImages[1]
-                )
+            # ۴. بخش ۲ رقم کد شهر
+            # مختصات دقیق و ثابت کادر مربع سمت راست
 
-                x_cursor += 45 + s_l  # فاصله تا حرف
+            x_city_start = 480
+            if templates == 'gozar':
+                x_city_start = 500
+            newPlate.paste(
+                glyphImages[6],
+                (x_city_start, y_cursor + 5),
+                mask=glyphImages[6]
+            )
 
-                # print(x_cursor)
+            # print(plate[-1])
 
-                # ۲. بخش حرف وسط
-                if base and templates != 'malolin va janbazan':
+            if plate[-1] == 0:
 
-                    newPlate.paste(
-                        glyphImages[2],
-                        (x_cursor, y_cursor + 3),
-                        mask=glyphImages[2]
-                    )
+                # print(y_cursor)
+                y_cursor -= z_tel
 
-                x_cursor += 65 + s_l  # فاصله تا ۳ رقم راست
+            x_city_second = x_city_start + s_l2 + s_2r
 
-                # print("size", glyphImages[2].size[0])
+            newPlate.paste(
+                glyphImages[7],
+                (x_city_second, y_cursor + 5),
+                mask=glyphImages[7]
+            )
 
-                for idx in [3, 4, 5]:
+            # print(x_city_second)
 
-                    newPlate.paste(
-                        glyphImages[idx],
-                        (x_cursor, y_cursor),
-                        mask=glyphImages[idx]
-                    )
+            # Image.Image.show(newPlate)
+            # ذخیره‌سازی پلاک اصلی
+            if not os.path.exists(f"{font}/{plateName}"):
+                                    os.mkdir(f"{font}/{plateName}")
+            _newPlate = newPlate.resize((312, 70), PIL.Image.LANCZOS)
+            _newPlate.save(f"{font}/{plateName}/{idCounter}.png")
+            fontsProgBar.update(1)
 
-                    x_cursor += 50 + s_3r
-
-                    # print(x_cursor)
-
-                # ۴. بخش ۲ رقم کد شهر
-                # مختصات دقیق و ثابت کادر مربع سمت راست
-
-                if base:
-
-                    x_city_start = 480
-
-                    newPlate.paste(
-                        glyphImages[6],
-                        (x_city_start, y_cursor + 5),
-                        mask=glyphImages[6]
-                    )
-
-                    # print(plate[-1])
-
-                    if plate[-1] == 0:
-
-                        # print(y_cursor)
-                        y_cursor -= -23
-
-                    x_city_second = x_city_start + 47 + s_2r
-
-                    newPlate.paste(
-                        glyphImages[7],
-                        (x_city_second, y_cursor + 5),
-                        mask=glyphImages[7]
-                    )
-
-                    # print(x_city_second)
-
-                # Image.Image.show(newPlate)
-                # ذخیره‌سازی پلاک اصلی
-                if not os.path.exists(f"{font}/{plateName}"):
-                                        os.mkdir(f"{font}/{plateName}")
-                _newPlate = newPlate.resize((312, 70), PIL.Image.LANCZOS)
-                _newPlate.save(f"{font}/{plateName}/{idCounter}.png")
+            # اعمال نویز
+            noisyTemplates = applyNoise(newPlate)
+            for noisyTemplate in noisyTemplates:
+                idCounter += 1
+                _noisyTemplate = noisyTemplate.resize((312, 70), PIL.Image.LANCZOS)
+                _noisyTemplate.save(f"{font}/{plateName}/{idCounter}.png")
                 fontsProgBar.update(1)
 
-                # اعمال نویز
-                noisyTemplates = applyNoise(newPlate)
-                for noisyTemplate in noisyTemplates:
+                # اعمال ترانسفورم‌ها
+                transformedTemplates = applyTransforms(noisyTemplate)
+                for transformedTemplate in transformedTemplates:
                     idCounter += 1
-                    _noisyTemplate = noisyTemplate.resize((312, 70), PIL.Image.LANCZOS)
-                    _noisyTemplate.save(f"{font}/{plateName}/{idCounter}.png")
+                    _transformedTemplate = transformedTemplate.resize((312, 70), PIL.Image.LANCZOS)
+                    _transformedTemplate.save(f"{font}/{plateName}/{idCounter}.png")
                     fontsProgBar.update(1)
-
-                    # اعمال ترانسفورم‌ها
-                    transformedTemplates = applyTransforms(noisyTemplate)
-                    for transformedTemplate in transformedTemplates:
-                        idCounter += 1
-                        _transformedTemplate = transformedTemplate.resize((312, 70), PIL.Image.LANCZOS)
-                        _transformedTemplate.save(f"{font}/{plateName}/{idCounter}.png")
-                        fontsProgBar.update(1)
 main()
 fontsProgBar.close()
