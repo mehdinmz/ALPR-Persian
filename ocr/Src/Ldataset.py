@@ -9,29 +9,55 @@ import tensorflow as tf
 # ============================================================
 
 DIGITS = [
-    "۰", "۱", "۲", "۳", "۴",
-    "۵", "۶", "۷", "۸", "۹"
+    "0", "1", "2", "3", "4",
+    "5", "6", "7", "8", "9"
 ]
 
 LETTERS = [
-    "الف", "ب", "پ", "ت", "ث", "ج", "چ", "ح", "خ", "د",
-    "ذ", "ر", "ز", "ژ", "س", "ش", "ص", "ض", "ط", "ظ",
-    "ع", "غ", "ف", "ق", "ک", "گ", "ل", "م", "ن", "و",
-    "ه", "ی"
+    "alef",
+    "beh",
+    "peh",
+    "teh",
+    "seh",
+    "jim",
+    "cheh",
+    "heh",
+    "kheh",
+    "dal",
+    "zal",
+    "reh",
+    "zeh",
+    "zheh",
+    "sin",
+    "shin",
+    "sad",
+    "zad",
+    "tah",
+    "zah",
+    "ein",
+    "ghein",
+    "feh",
+    "ghaf",
+    "kaf",
+    "gaf",
+    "lam",
+    "mim",
+    "noon",
+    "vav",
+    "he",
+    "ye",
 ]
 
 VOCABULARY = DIGITS + LETTERS
 
-# ID = 1 ... N
-# 0 = padding
 TOKEN_TO_ID = {
-    token: i + 1
-    for i, token in enumerate(VOCABULARY)
+    token: index + 1
+    for index, token in enumerate(VOCABULARY)
 }
 
 ID_TO_TOKEN = {
-    i + 1: token
-    for i, token in enumerate(VOCABULARY)
+    index + 1: token
+    for index, token in enumerate(VOCABULARY)
 }
 
 MAX_LABEL_LEN = 8
@@ -43,52 +69,167 @@ MAX_LABEL_LEN = 8
 
 def encode_label(label_text: str):
     """
-    Input example:
+    Convert folder name into 8 OCR tokens.
 
-        ۱۲ الف ۳۴۵ ۴۸
+    Example:
 
-    تبدیل می‌شود به:
+        19teh933_20
 
-        ['۱', '۲', 'الف', '۳', '۴', '۵', '۴', '۸']
+    becomes:
 
-    'الف' یک token است، نه سه character.
+        [
+            "1",
+            "9",
+            "teh",
+            "9",
+            "3",
+            "3",
+            "2",
+            "0"
+        ]
+
+    The letter token is treated as ONE token.
     """
 
-    parts = label_text.strip().split()
+    label_text = label_text.strip().lower()
 
-    if len(parts) != 4:
+    # --------------------------------------------------------
+    # Split city code
+    # --------------------------------------------------------
+
+    parts = label_text.split("_")
+
+    if len(parts) != 2:
         raise ValueError(
-            f"Invalid label format: {label_text!r}"
+            f"Invalid plate folder name: {label_text!r}. "
+            f"Expected format like: 19teh933_20"
         )
 
-    first_two = list(parts[0])
-    letter = parts[1]
-    middle_three = list(parts[2])
-    regional_code = list(parts[3])
+    main_part = parts[0]
+    city_code = parts[1]
+
+    # --------------------------------------------------------
+    # Validate city code
+    # --------------------------------------------------------
+
+    if len(city_code) != 2 or not city_code.isdigit():
+        raise ValueError(
+            f"Invalid city code in plate: {label_text!r}"
+        )
+
+    # --------------------------------------------------------
+    # First two digits
+    # --------------------------------------------------------
+
+    if len(main_part) < 6:
+        raise ValueError(
+            f"Invalid main plate section: {label_text!r}"
+        )
+
+    first_two = main_part[:2]
+
+    if not first_two.isdigit():
+        raise ValueError(
+            f"First two characters must be digits: "
+            f"{label_text!r}"
+        )
+
+    # --------------------------------------------------------
+    # Extract letter token
+    #
+    # Example:
+    #
+    #     19teh933
+    #       ^^
+    #
+    #     Actually "teh" is detected as the alphabetic
+    #     sequence between the first 2 digits and final 3 digits.
+    # --------------------------------------------------------
+
+    remaining = main_part[2:]
+
+    letter_end = 0
+
+    while (
+        letter_end < len(remaining)
+        and remaining[letter_end].isalpha()
+    ):
+        letter_end += 1
+
+    letter = remaining[:letter_end]
+    middle_three = remaining[letter_end:]
+
+    # --------------------------------------------------------
+    # Validate letter
+    # --------------------------------------------------------
+
+    if not letter:
+        raise ValueError(
+            f"Letter token not found in plate: "
+            f"{label_text!r}"
+        )
+
+    if letter not in LETTERS:
+        raise ValueError(
+            f"Unknown letter token {letter!r} "
+            f"in plate {label_text!r}"
+        )
+
+    # --------------------------------------------------------
+    # Validate middle three digits
+    # --------------------------------------------------------
+
+    if len(middle_three) != 3:
+        raise ValueError(
+            f"Expected 3 digits after letter in "
+            f"{label_text!r}, got {middle_three!r}"
+        )
+
+    if not middle_three.isdigit():
+        raise ValueError(
+            f"Middle section must contain 3 digits: "
+            f"{label_text!r}"
+        )
+
+    # --------------------------------------------------------
+    # Build 8 tokens
+    # --------------------------------------------------------
 
     tokens = (
-        first_two
+        list(first_two)
         + [letter]
-        + middle_three
-        + regional_code
+        + list(middle_three)
+        + list(city_code)
     )
+
+    # --------------------------------------------------------
+    # Final length check
+    # --------------------------------------------------------
 
     if len(tokens) != MAX_LABEL_LEN:
         raise ValueError(
             f"Expected {MAX_LABEL_LEN} tokens, "
-            f"got {len(tokens)} for label {label_text!r}"
+            f"got {len(tokens)} for plate "
+            f"{label_text!r}"
         )
+
+    # --------------------------------------------------------
+    # Convert tokens to integer IDs
+    # --------------------------------------------------------
 
     encoded = []
 
     for token in tokens:
+
         if token not in TOKEN_TO_ID:
             raise ValueError(
                 f"Unknown token {token!r} "
-                f"in label {label_text!r}"
+                f"in plate {label_text!r}"
             )
 
-        encoded.append(TOKEN_TO_ID[token])
+        encoded.append(
+            TOKEN_TO_ID[token]
+        )
 
     return np.asarray(
         encoded,
@@ -97,62 +238,117 @@ def encode_label(label_text: str):
 
 
 # ============================================================
-# LOAD LABELS
+# LOAD ALL PLATES
 # ============================================================
 
-def load_labels_file(data_dir):
+def load_dataset_from_folders(data_dir):
+    """
+    Expected structure:
+
+        data_dir/
+        ├── 19teh933_20/
+        │   ├── 0.png
+        │   ├── 1.png
+        │   └── ...
+        │
+        ├── 52sin123_45/
+        │   ├── 0.png
+        │   └── ...
+        │
+        └── ...
+
+    The folder name is the label.
+
+    Returns:
+
+        image_paths
+        labels
+        plate_ids
+    """
+
     data_dir = Path(data_dir)
 
-    labels_path = data_dir / "labels.txt"
-    images_dir = data_dir / "images"
-
-    if not labels_path.exists():
+    if not data_dir.exists():
         raise FileNotFoundError(
-            f"labels.txt not found:\n{labels_path.resolve()}"
+            f"Dataset directory not found:\n"
+            f"{data_dir.resolve()}"
         )
 
-    img_paths = []
+    plate_dirs = sorted(
+        [
+            path
+            for path in data_dir.iterdir()
+            if path.is_dir()
+        ]
+    )
+
+    if not plate_dirs:
+        raise RuntimeError(
+            f"No plate directories found in:\n"
+            f"{data_dir.resolve()}"
+        )
+
+    image_paths = []
     labels = []
+    plate_ids = []
 
-    with open(
-        labels_path,
-        "r",
-        encoding="utf-8"
-    ) as f:
+    # --------------------------------------------------------
+    # Process each plate folder
+    # --------------------------------------------------------
 
-        for line_number, line in enumerate(f, start=1):
+    for plate_dir in plate_dirs:
 
-            line = line.strip()
+        plate_id = plate_dir.name
 
-            if not line:
-                continue
+        # Encode folder name ONCE
+        encoded_label = encode_label(
+            plate_id
+        )
 
-            parts = line.split(",", 1)
+        # ----------------------------------------------------
+        # All PNG files belong to this plate
+        # ----------------------------------------------------
 
-            if len(parts) != 2:
-                raise ValueError(
-                    f"Invalid labels.txt line "
-                    f"{line_number}: {line!r}"
-                )
+        images = sorted(
+            plate_dir.glob("*.png"),
+            key=lambda path: (
+                int(path.stem)
+                if path.stem.isdigit()
+                else path.stem
+            )
+        )
 
-            img_name, label_text = parts
+        if not images:
+            print(
+                f"Warning: no PNG images found in "
+                f"{plate_dir}"
+            )
+            continue
 
-            img_path = images_dir / img_name
+        for image_path in images:
 
-            if not img_path.exists():
-                raise FileNotFoundError(
-                    f"Image referenced in labels.txt "
-                    f"does not exist:\n{img_path}"
-                )
+            image_paths.append(
+                str(image_path)
+            )
 
-            encoded_label = encode_label(label_text)
+            labels.append(
+                encoded_label
+            )
 
-            img_paths.append(str(img_path))
-            labels.append(encoded_label)
+            plate_ids.append(
+                plate_id
+            )
+
+    if not image_paths:
+        raise RuntimeError(
+            f"No images found in:\n"
+            f"{data_dir.resolve()}"
+        )
 
     return (
-        np.asarray(img_paths),
-        np.asarray(labels, dtype=np.int32)
+        np.asarray(image_paths),
+        np.asarray(labels, dtype=np.int32),
+        np.asarray(plate_ids)
     )
 
 
@@ -160,9 +356,11 @@ def load_labels_file(data_dir):
 # IMAGE PROCESSING
 # ============================================================
 
-def process_sample(img_path, label):
+def process_sample(image_path, label):
 
-    image = tf.io.read_file(img_path)
+    image = tf.io.read_file(
+        image_path
+    )
 
     image = tf.io.decode_png(
         image,
@@ -195,79 +393,207 @@ def get_dataset(
     seed=42
 ):
 
+    # --------------------------------------------------------
+    # Default path
+    # --------------------------------------------------------
+
     if data_dir is None:
+
         data_dir = (
             Path(__file__).resolve().parent.parent
-            / "data"
-            / "synthetic_plates_crnn"
+            / "Dataset"
+            / "generated_plates"
+            / "roya_bold"
         )
 
-    img_paths, labels = load_labels_file(data_dir)
+    # --------------------------------------------------------
+    # Load dataset
+    # --------------------------------------------------------
 
-    num_samples = len(img_paths)
+    (
+        image_paths,
+        labels,
+        plate_ids
+    ) = load_dataset_from_folders(
+        data_dir
+    )
 
-    if num_samples == 0:
+    # --------------------------------------------------------
+    # Split by UNIQUE PLATE
+    #
+    # IMPORTANT:
+    # Do NOT split individual images.
+    # All variations of one plate must stay
+    # in the same split.
+    # --------------------------------------------------------
+
+    unique_plates = np.unique(
+        plate_ids
+    )
+
+    num_plates = len(
+        unique_plates
+    )
+
+    if num_plates < 2:
         raise RuntimeError(
-            "Dataset is empty."
+            "At least 2 unique plates are required."
         )
 
-    rng = np.random.default_rng(seed)
-
-    indices = np.arange(num_samples)
-
-    rng.shuffle(indices)
-
-    val_size = int(
-        num_samples * validation_split
+    rng = np.random.default_rng(
+        seed
     )
 
-    val_indices = indices[:val_size]
-    train_indices = indices[val_size:]
+    shuffled_plates = unique_plates.copy()
 
-    train_paths = img_paths[train_indices]
-    train_labels = labels[train_indices]
+    rng.shuffle(
+        shuffled_plates
+    )
 
-    val_paths = img_paths[val_indices]
-    val_labels = labels[val_indices]
-
-    train_ds = tf.data.Dataset.from_tensor_slices(
-        (
-            train_paths,
-            train_labels
+    val_plate_count = max(
+        1,
+        int(
+            num_plates
+            * validation_split
         )
     )
 
-    val_ds = tf.data.Dataset.from_tensor_slices(
-        (
-            val_paths,
-            val_labels
-        )
+    val_plate_ids = set(
+        shuffled_plates[
+            :val_plate_count
+        ]
     )
+
+    train_mask = np.array(
+        [
+            plate_id not in val_plate_ids
+            for plate_id in plate_ids
+        ],
+        dtype=bool
+    )
+
+    val_mask = np.array(
+        [
+            plate_id in val_plate_ids
+            for plate_id in plate_ids
+        ],
+        dtype=bool
+    )
+
+    train_paths = image_paths[
+        train_mask
+    ]
+
+    train_labels = labels[
+        train_mask
+    ]
+
+    val_paths = image_paths[
+        val_mask
+    ]
+
+    val_labels = labels[
+        val_mask
+    ]
+
+    # --------------------------------------------------------
+    # Statistics
+    # --------------------------------------------------------
+
+    print("=" * 60)
+    print("OCR DATASET")
+    print("=" * 60)
+
+    print(
+        f"Dataset : {data_dir.resolve()}"
+    )
+
+    print(
+        f"Unique plates : {num_plates}"
+    )
+
+    print(
+        f"Total images : {len(image_paths)}"
+    )
+
+    print()
+
+    print(
+        f"Train plates : "
+        f"{num_plates - val_plate_count}"
+    )
+
+    print(
+        f"Validation plates : "
+        f"{val_plate_count}"
+    )
+
+    print()
+
+    print(
+        f"Train images : "
+        f"{len(train_paths)}"
+    )
+
+    print(
+        f"Validation images : "
+        f"{len(val_paths)}"
+    )
+
+    print("=" * 60)
+
+    # --------------------------------------------------------
+    # TensorFlow Dataset
+    # --------------------------------------------------------
 
     AUTOTUNE = tf.data.AUTOTUNE
 
     train_ds = (
-        train_ds
+        tf.data.Dataset
+        .from_tensor_slices(
+            (
+                train_paths,
+                train_labels
+            )
+        )
         .shuffle(
-            min(len(train_paths), 5000),
-            seed=seed
+            buffer_size=min(
+                len(train_paths),
+                10000
+            ),
+            seed=seed,
+            reshuffle_each_iteration=True
         )
         .map(
             process_sample,
             num_parallel_calls=AUTOTUNE
         )
-        .batch(batch_size)
-        .prefetch(AUTOTUNE)
+        .batch(
+            batch_size
+        )
+        .prefetch(
+            AUTOTUNE
+        )
     )
 
     val_ds = (
-        val_ds
+        tf.data.Dataset
+        .from_tensor_slices(
+            (
+                val_paths,
+                val_labels
+            )
+        )
         .map(
             process_sample,
             num_parallel_calls=AUTOTUNE
         )
-        .batch(batch_size)
-        .prefetch(AUTOTUNE)
+        .batch(
+            batch_size
+        )
+        .prefetch(
+            AUTOTUNE
+        )
     )
 
     return train_ds, val_ds
