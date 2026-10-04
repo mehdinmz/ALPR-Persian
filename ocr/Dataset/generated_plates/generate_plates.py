@@ -70,7 +70,7 @@ def getNewPlate(template_name):
 
 def applyNoise(plate):
     # Noises
-    n = "..\\Noises"
+    n = Path(r"../Noises")
     noises = os.listdir(n)
     transformations = ['rotate_right', 'rotate_left', 'zoom_in', 'zoom_out', 'prespective_transform']
 
