@@ -2,6 +2,9 @@ from pathlib import Path
 
 import tensorflow as tf
 
+import re
+from collections import Counter
+
 from model import build_crnn_model
 from Ldataset import (
     get_dataset,
@@ -15,9 +18,9 @@ from Ldataset import (
 # ============================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-# DATA_DIR = PROJECT_ROOT / "Dataset" / "generated_plates" / "roya_bold"
-DATA_DIR = Path("C:\\Users\\MEHDI\\Desktop\\Projects\\ALPR-Persian\\ocr\\Dataset\\generated_plates\\roya_bold").resolve()
-MODEL_DIR = PROJECT_ROOT / "Models"
+DATA_DIR = PROJECT_ROOT / "Dataset" / "generated_plates" / "roya_bold" 
+
+MODEL_DIR = PROJECT_ROOT / "models"
 MODEL_DIR.mkdir(
     parents=True,
     exist_ok=True
@@ -37,6 +40,27 @@ train_ds, val_ds = get_dataset(
     seed=42,
 )
 
+pattern = re.compile(r"^(\d{2})(.+?)(\d{3})_(\d{2})$")
+
+letter_tokens = []
+
+for plate_dir in DATA_DIR.iterdir():
+    if not plate_dir.is_dir():
+        continue
+
+    match = pattern.match(plate_dir.name)
+
+    if not match:
+        print("Invalid:", plate_dir.name)
+        continue
+
+    first_two, letter, middle_three, city_code = match.groups()
+    letter_tokens.append(letter)
+
+counter = Counter(letter_tokens)
+
+print("Unique letter tokens:", len(counter))
+print(sorted(counter.keys()))
 
 # ============================================================
 # MODEL
@@ -49,7 +73,7 @@ train_ds, val_ds = get_dataset(
 #
 # => 44 classes
 
-NUM_CLASSES = len(VOCABULARY) + 2 # تعداد کل کاراکترها + OOV + Blank token در CTC
+NUM_CLASSES = len(VOCABULARY) + 2
 
 model = build_crnn_model(
     input_shape=(32, 160, 1),
@@ -141,7 +165,7 @@ early_stopping_cb = tf.keras.callbacks.EarlyStopping(
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=50,
+    epochs=10,
     callbacks=[
         checkpoint_cb,
         early_stopping_cb,
