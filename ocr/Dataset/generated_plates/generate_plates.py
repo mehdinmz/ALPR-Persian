@@ -219,7 +219,7 @@ def gen():
             )
 
             background = Image.open(
-                f'{t}{templates}/{template}'
+                f'{t}/{templates}/{template}'
             ).convert("RGBA")
 
             newPlate.paste(background, (0, 0))
