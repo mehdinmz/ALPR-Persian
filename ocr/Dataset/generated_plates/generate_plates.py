@@ -174,7 +174,7 @@ def gen():
 
     for templates in os.listdir(t):
 
-        for template in os.listdir(t + templates):
+        for template in os.listdir(t / templates):
             idCounter = 0
             white = template in whites
 
