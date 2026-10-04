@@ -1,5 +1,6 @@
 import csv
 import os
+from pathlib import Path
 import random
 import time
 from PIL import Image
@@ -143,7 +144,7 @@ def gen():
 
     # Fonts and Templates
     font = 'roya_bold'
-    t = "..\\Templates\\"
+    t = Path(r"..\Templates\")
     #defining cursor for each template type
     cursor = {
         "dolati": {"x":65,"y":30,"s_2r":6, "s_3r":7, "s_l":32,"s_l2":47,"y2":30,"z_tel":-23},
