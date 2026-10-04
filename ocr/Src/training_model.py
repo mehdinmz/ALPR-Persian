@@ -15,9 +15,9 @@ from Ldataset import (
 # ============================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data" / "synthetic_plates_crnn"
-
-MODEL_DIR = PROJECT_ROOT / "models"
+# DATA_DIR = PROJECT_ROOT / "Dataset" / "generated_plates" / "roya_bold"
+DATA_DIR = Path("C:\\Users\\MEHDI\\Desktop\\Projects\\ALPR-Persian\\ocr\\Dataset\\generated_plates\\roya_bold").resolve()
+MODEL_DIR = PROJECT_ROOT / "Models"
 MODEL_DIR.mkdir(
     parents=True,
     exist_ok=True
@@ -49,7 +49,7 @@ train_ds, val_ds = get_dataset(
 #
 # => 44 classes
 
-NUM_CLASSES = len(VOCABULARY) + 1
+NUM_CLASSES = len(VOCABULARY) + 2 # تعداد کل کاراکترها + OOV + Blank token در CTC
 
 model = build_crnn_model(
     input_shape=(32, 160, 1),
@@ -141,7 +141,7 @@ early_stopping_cb = tf.keras.callbacks.EarlyStopping(
 history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=25,
+    epochs=50,
     callbacks=[
         checkpoint_cb,
         early_stopping_cb,
@@ -154,7 +154,7 @@ history = model.fit(
 # ============================================================
 
 model.save(
-    MODEL_DIR / "final_crnn_model.keras"
+    MODEL_DIR / "best_crnn_model.keras"
 )
 
 print(

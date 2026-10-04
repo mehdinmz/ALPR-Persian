@@ -137,7 +137,7 @@ fontsProgBar = tqdm(total=total_steps, desc='Generating Plate...')
 # for font in fonts:
 #     if not os.path.exists(font):
 #         os.mkdir(font)
-def main():
+def gen():
     # Characters of Letters and Numbers in Plates
     numbers = [str(i) for i in range(0, 10)]
 
@@ -328,5 +328,6 @@ def main():
                     _transformedTemplate = transformedTemplate.resize((312, 70), PIL.Image.LANCZOS)
                     _transformedTemplate.save(f"{font}/{plateName}/{idCounter}.png")
                     fontsProgBar.update(1)
-main()
+if __name__ == "__main__":
+    gen()
 fontsProgBar.close()

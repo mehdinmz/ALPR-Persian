@@ -1,5 +1,6 @@
 from pathlib import Path
-
+import re
+from collections import Counter
 import numpy as np
 import tensorflow as tf
 
@@ -14,38 +15,32 @@ DIGITS = [
 ]
 
 LETTERS = [
+    "D",
+    "S",
     "alef",
     "beh",
-    "peh",
-    "teh",
-    "seh",
-    "jim",
-    "cheh",
-    "heh",
-    "kheh",
     "dal",
-    "zal",
-    "reh",
-    "zeh",
-    "zheh",
-    "sin",
-    "shin",
-    "sad",
-    "zad",
-    "tah",
-    "zah",
     "ein",
-    "ghein",
     "feh",
-    "ghaf",
-    "kaf",
     "gaf",
+    "ghaf",
+    "he",
+    "jim",
+    "kaf",
     "lam",
     "mim",
     "noon",
+    "peh",
+    "sad",
+    "seh",
+    "shin",
+    "sin",
+    "ta",
+    "teh",
     "vav",
-    "he",
     "ye",
+    "zeh",
+    "zhe",
 ]
 
 VOCABULARY = DIGITS + LETTERS
@@ -91,7 +86,7 @@ def encode_label(label_text: str):
     The letter token is treated as ONE token.
     """
 
-    label_text = label_text.strip().lower()
+    label_text = label_text.strip()
 
     # --------------------------------------------------------
     # Split city code
@@ -595,5 +590,26 @@ def get_dataset(
             AUTOTUNE
         )
     )
+    pattern = re.compile(r"^(\d{2})(.+?)(\d{3})_(\d{2})$")
+
+    letter_tokens = []
+
+    for plate_dir in data_dir.iterdir():
+        if not plate_dir.is_dir():
+            continue
+
+        match = pattern.match(plate_dir.name)
+
+        if not match:
+            print("Invalid:", plate_dir.name)
+            continue
+
+        first_two, letter, middle_three, city_code = match.groups()
+        letter_tokens.append(letter)
+
+    counter = Counter(letter_tokens)
+
+    print("Unique letter tokens:", len(counter))
+    print(sorted(counter.keys()))
 
     return train_ds, val_ds
