@@ -1,0 +1,17 @@
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+*.onnx
+*.onnx.data
+
+*.engine
+
+*.ipynb
+
+__pycache__/
+.ipynb_checkpoints/
+
+.git/
+.gitignore

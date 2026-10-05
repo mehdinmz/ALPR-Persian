@@ -46,14 +46,16 @@ LETTERS = [
 VOCABULARY = DIGITS + LETTERS
 
 TOKEN_TO_ID = {
-    token: index + 1
+    token: index
     for index, token in enumerate(VOCABULARY)
 }
 
 ID_TO_TOKEN = {
-    index + 1: token
+    index: token
     for index, token in enumerate(VOCABULARY)
 }
+
+BLANK_ID = len(VOCABULARY)
 
 MAX_LABEL_LEN = 8
 

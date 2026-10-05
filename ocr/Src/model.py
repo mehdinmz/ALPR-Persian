@@ -2,8 +2,8 @@ import tensorflow as tf
 from tensorflow.keras import layers, models
 
 def build_crnn_model(
-    input_shape=(32, 128, 1), # عرض تصویر معمولاً برای توالی‌ها بزرگ‌تر از ارتفاع است
-    num_classes=45            # تعداد کلاس‌ها (شامل کاراکترها + علامت blank برای CTC)
+    input_shape=(32, 160, 1),
+    num_classes=37
 ):
     inputs = layers.Input(shape=input_shape, name="image_input")
 

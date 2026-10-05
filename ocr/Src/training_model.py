@@ -66,14 +66,8 @@ print(sorted(counter.keys()))
 # MODEL
 # ============================================================
 
-# 43 توکن:
-# 10 digits + 33 letters
-#
-# + 1 CTC blank
-#
-# => 44 classes
 
-NUM_CLASSES = len(VOCABULARY) + 2
+NUM_CLASSES = len(VOCABULARY) + 1
 
 model = build_crnn_model(
     input_shape=(32, 160, 1),
