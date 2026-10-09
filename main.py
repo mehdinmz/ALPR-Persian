@@ -19,11 +19,11 @@ from fastapi.responses import JSONResponse
 # CONFIG
 # ============================================================
 
-DETECTION_URL = "http://localhost:8001"
-OCR_URL = "http://localhost:8002"
+DETECTION_URL = "http://127.0.0.1:8001"
+OCR_URL = "http://127.0.0.1:8002"
 
-DETECTION_TIMEOUT = 30.0
-OCR_TIMEOUT = 10.0
+DETECTION_TIMEOUT = 60.0
+OCR_TIMEOUT = 20.0
 
 # Maximum number of results kept for each active stream.
 MAX_STREAM_RESULTS = 100
@@ -208,193 +208,105 @@ def extract_boundary(
 def parse_detection_multipart(
     response: httpx.Response,
 ):
-    """
-    Detection response:
-
-        multipart/mixed
-            ├── JSON metadata
-            └── JPEG crop(s)
-    """
-
-    content_type = response.headers.get(
-        "content-type",
-        "",
-    )
+    content_type = response.headers.get("content-type", "")
 
     if "multipart/mixed" not in content_type:
-
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Detection returned an invalid "
-                "response format."
-            ),
+            detail=f"Detection invalid format: {content_type}",
         )
 
-    boundary = extract_boundary(
-        content_type
-    )
-
+    boundary = extract_boundary(content_type)
     if not boundary:
-
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Detection response has no "
-                "multipart boundary."
-            ),
+            detail="Detection response missing boundary.",
         )
 
-    boundary_bytes = (
-        f"--{boundary}".encode("utf-8")
-    )
-
-    parts = response.content.split(
-        boundary_bytes
-    )
+    # جداسازی بر اساس boundary استاندارد
+    boundary_bytes = f"--{boundary}".encode("utf-8")
+    parts = response.content.split(boundary_bytes)
 
     metadata = None
     crops = {}
 
     for part in parts:
-
         part = part.strip()
-
-        if not part:
-            continue
-
-        if part in (b"--", b"---"):
+        if not part or part in (b"--", b"---"):
             continue
 
         if b"\r\n\r\n" not in part:
             continue
 
-        headers_raw, body = part.split(
-            b"\r\n\r\n",
-            1,
-        )
-
-        headers = headers_raw.decode(
-            "utf-8",
-            errors="ignore",
-        )
-
-        body = body.rstrip(
-            b"\r\n"
-        )
+        # تفکیک دقیق هدر و بدنه باینری
+        headers_raw, body = part.split(b"\r\n\r\n", 1)
+        headers = headers_raw.decode("utf-8", errors="ignore").lower()
+        body = body.rstrip(b"\r\n")
 
         # ----------------------------------------------------
-        # JSON metadata
+        # JSON Metadata
         # ----------------------------------------------------
-
         if "application/json" in headers:
-
             try:
-
-                metadata = json.loads(
-                    body.decode("utf-8")
-                )
-
-            except json.JSONDecodeError as exc:
-
+                metadata = json.loads(body.decode("utf-8"))
+            except Exception as exc:
                 raise HTTPException(
                     status_code=502,
-                    detail=(
-                        "Detection returned invalid JSON."
-                    ),
+                    detail=f"Invalid JSON from Detection: {exc}",
                 ) from exc
 
         # ----------------------------------------------------
-        # JPEG crop
+        # JPEG Crop Image
         # ----------------------------------------------------
-
         elif "image/jpeg" in headers:
-
             filename = None
-
-            for line in headers.split("\r\n"):
-
-                if "filename=" in line:
-
-                    filename = (
-                        line
-                        .split(
-                            "filename=",
-                            1,
-                        )[1]
-                        .strip('"')
-                    )
-
+            for line in headers_raw.decode("utf-8", errors="ignore").split("\r\n"):
+                if "filename=" in line.lower():
+                    filename = line.split("=", 1)[1].strip('"\r\n ')
                     break
 
-            if filename is None:
-
-                filename = (
-                    f"{uuid.uuid4().hex}.jpg"
-                )
+            if not filename:
+                filename = f"{uuid.uuid4().hex}.jpg"
 
             crops[filename] = body
 
     if metadata is None:
-
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Detection did not return metadata."
-            ),
+            detail="Detection did not return metadata JSON.",
         )
 
     return metadata, crops
-
 
 # ============================================================
 # DETECTION CLIENT
 # ============================================================
 
-async def detect_frame(
-    frame_bytes: bytes,
-):
-    """
-    Send ONE frame to Detection.
-
-    Detection does not know whether this frame
-    came from image, video or CCTV.
-    """
-
+async def detect_frame(frame_bytes: bytes):
     client = get_http_client()
-
     try:
-
         response = await client.post(
             f"{DETECTION_URL}/detect",
-            files={
-                "file": (
-                    "frame.jpg",
-                    frame_bytes,
-                    "image/jpeg",
-                )
-            },
+            files={"file": ("frame.jpg", frame_bytes, "image/jpeg")},
             timeout=DETECTION_TIMEOUT,
         )
-
     except httpx.RequestError as exc:
-
-        raise RuntimeError(
-            f"Detection service unavailable: {exc}"
-        ) from exc
+        raise RuntimeError(f"Detection service unavailable: {exc}") from exc
 
     if response.status_code != 200:
-
+        # چاپ هدرها و بدنه کامل پاسخ جهت عیب‌یابی دقیق
         raise RuntimeError(
-            "Detection error: "
-            f"{response.status_code} "
-            f"{response.text}"
+            f"Detection HTTP {response.status_code} | "
+            f"Headers: {dict(response.headers)} | "
+            f"Body: {response.text[:300]}"
         )
 
-    return parse_detection_multipart(
-        response
-    )
+    return parse_detection_multipart(response)
 
+
+# ============================================================
+# OCR CLIENT
+# ============================================================
 
 # ============================================================
 # OCR CLIENT
@@ -404,16 +316,11 @@ async def recognize_crop(
     crop_bytes: bytes,
     filename: str,
 ):
-    """
-    Send one plate crop to OCR.
-    """
-
     client = get_http_client()
 
     try:
-
         response = await client.post(
-            f"{OCR_URL}/recognize",
+            f"{OCR_URL}/predict",  # تغییر مسیر از /recognize به /predict
             files={
                 "file": (
                     filename,
