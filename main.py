@@ -4,7 +4,7 @@ import uuid
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import cv2
 import httpx
@@ -41,7 +41,7 @@ VIDEO_EXTENSIONS = {
     ".mpg",
 }
 
-CONFIDENCE_THRESHOLD = 0.60  # حد حداقل کانفیدنس (۶۰٪)
+CONFIDENCE_THRESHOLD = 0.60  # حداقل آستانه پذیرش (۶۰٪)
 
 
 # ============================================================
@@ -82,6 +82,10 @@ class StreamState:
         self.error = None
 
         self.latest_annotated_frame: Optional[bytes] = None
+
+        # حافظه نگهداری اطلاعات اختصاصی هر پلاک براساس track_id
+        # { track_id: {"confidence": float, "text": str, "bbox": list} }
+        self.tracked_plates: Dict[int, dict] = {}
 
 
 streams: dict[str, StreamState] = {}
@@ -172,6 +176,9 @@ def extract_boundary(content_type: str) -> Optional[str]:
 
 
 def draw_annotations(frame_np: np.ndarray, detections: list) -> bytes:
+    """
+    رسم Bounding Box و متن OCR (بدون نمایش plate_id)
+    """
     annotated = frame_np.copy()
 
     for det in detections:
@@ -182,26 +189,30 @@ def draw_annotations(frame_np: np.ndarray, detections: list) -> bytes:
         if bbox and len(bbox) == 4:
             x1, y1, x2, y2 = map(int, bbox)
 
-            # رسم مستطیل دور پلاک (سبز)
+            # رسم مستطیل سبز دور پلاک
             cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-            label = f"{text} ({conf:.2f})" if text else f"{conf:.2f}"
+            # برچسب شامل متن OCR و میزان کانفیدنس
+            label = f"{text} ({conf:.2f})" if text else f"({conf:.2f})"
 
             (text_w, text_h), baseline = cv2.getTextSize(
                 label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
             )
+            
+            # پس‌زمینه برچسب
             cv2.rectangle(
                 annotated,
                 (x1, max(0, y1 - text_h - 10)),
-                (x1 + text_w, y1),
+                (x1 + text_w + 5, y1),
                 (0, 255, 0),
                 -1,
             )
 
+            # متن اصلی پلاک
             cv2.putText(
                 annotated,
                 label,
-                (x1, max(15, y1 - 5)),
+                (x1 + 2, max(15, y1 - 5)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
                 (0, 0, 0),
@@ -215,7 +226,6 @@ def draw_annotations(frame_np: np.ndarray, detections: list) -> bytes:
     if success:
         return encoded_image.tobytes()
     return None
-
 
 # ============================================================
 # DETECTION RESPONSE PARSER
@@ -363,14 +373,14 @@ async def recognize_crop(crop_bytes: bytes, filename: str):
 
 
 # ============================================================
-# FRAME PIPELINE
+# FRAME PIPELINE (SINGLE FRAME)
 # ============================================================
 
 async def process_frame(frame_bytes: bytes):
     metadata, crops = await detect_frame(frame_bytes)
     raw_detections = metadata.get("detections", [])
 
-    # فیلتر آستانه ۶۰٪
+    # فیلتر فریم‌های زیر ۶۰٪ کانفیدنس
     valid_detections = [
         d for d in raw_detections if d.get("confidence", 0.0) >= CONFIDENCE_THRESHOLD
     ]
@@ -382,7 +392,7 @@ async def process_frame(frame_bytes: bytes):
 
 
 # ============================================================
-# IMAGE / VIDEO API ENDPOINTS
+# IMAGE API ENDPOINT
 # ============================================================
 
 @app.post("/process/image")
@@ -408,6 +418,7 @@ async def process_image(file: UploadFile = File(...)):
         final_detections = []
         for det, ocr in zip(detections, ocr_results):
             det_copy = dict(det)
+            det_copy["plate_id"] = det.get("track_id")
             det_copy["text"] = ocr.get("text")
             final_detections.append(det_copy)
 
@@ -422,7 +433,7 @@ async def process_image(file: UploadFile = File(...)):
 
 
 # ============================================================
-# RTSP / CCTV WORKER (REALTIME TRACKING + OCR BATCHING)
+# RTSP / CCTV WORKER (UNIQUE PLATE ID + HIGHEST CONFIDENCE LOCK)
 # ============================================================
 
 async def open_rtsp(url: str):
@@ -460,9 +471,6 @@ async def stream_worker(stream: StreamState):
             fps = capture.get(cv2.CAP_PROP_FPS) or 25.0
             frame_delay = 1.0 / fps
 
-            hundred_frame_buffer = []
-            cached_ocr_text = ""
-
             while stream.running:
                 start_time = asyncio.get_running_loop().time()
 
@@ -481,7 +489,7 @@ async def stream_worker(stream: StreamState):
 
                 frame_bytes = buffer.tobytes()
 
-                # دیتکشن ریل‌تایم برای هر فریم جهت Tracking دقیق BBox
+                # اجرای دیتکشن ریل‌تایم روی فریم
                 try:
                     async with stream_lock:
                         frame_res = await process_frame(frame_bytes)
@@ -494,53 +502,62 @@ async def stream_worker(stream: StreamState):
                 detections = frame_res.get("detections", [])
                 crops = frame_res.get("crops", {})
 
-                # ذخیره فریم و دیتکشن‌های آن در بافر ۱۰۰ فریمی
-                hundred_frame_buffer.append((detections, crops))
+                active_frame_detections = []
 
-                # وقتی ۱۰۰ فریم پر شد: OCR را برای بهترین فریم اجرا و متن را آپدیت کن
-                if len(hundred_frame_buffer) == 100:
-                    best_conf = CONFIDENCE_THRESHOLD
-                    best_crop_bytes = None
-                    best_crop_name = None
+                # پردازش و به‌روزرسانی وضعیت هر پلاک براساس track_id (plate_id)
+                for det in detections:
+                    track_id = det.get("track_id")
+                    confidence = det.get("confidence", 0.0)
+                    crop_name = det.get("crop")
 
-                    for dets, crps in hundred_frame_buffer:
-                        for d in dets:
-                            conf = d.get("confidence", 0.0)
-                            c_name = d.get("crop")
-                            if conf > best_conf and c_name in crps:
-                                best_conf = conf
-                                best_crop_bytes = crps[c_name]
-                                best_crop_name = c_name
+                    if track_id is None:
+                        continue
 
-                    if best_crop_bytes and best_crop_name:
-                        ocr_res = await recognize_crop(best_crop_bytes, best_crop_name)
-                        cached_ocr_text = ocr_res.get("text") or cached_ocr_text
-                    else:
-                        cached_ocr_text = ""
+                    # اگر پلاک جدید باشد یا دقت جدید بالاتر از دقت قبلی باشد -> فراخوانی OCR
+                    if track_id not in stream.tracked_plates:
+                        stream.tracked_plates[track_id] = {
+                            "confidence": 0.0,
+                            "text": None,
+                            "bbox": det.get("bbox"),
+                        }
 
-                    hundred_frame_buffer.clear()
+                    cached_plate = stream.tracked_plates[track_id]
 
-                # اگر در فریم جاری پلاک وجود دارد، مختصات BBox ریل‌تایم با متن OCR تثبیت‌شده ترکیب شود
-                active_detections_to_draw = []
-                if detections:
-                    for det in detections:
-                        det_copy = dict(det)
-                        det_copy["text"] = cached_ocr_text
-                        active_detections_to_draw.append(det_copy)
+                    if confidence > cached_plate["confidence"] and crop_name in crops:
+                        # ارسال به OCR تنها در صورت ثبت بالاترین Confidence
+                        ocr_res = await recognize_crop(crops[crop_name], crop_name)
+                        new_text = ocr_res.get("text")
 
-                    # ذخیره نتیجه در لیست
-                    stream.results.append(
+                        if new_text:
+                            cached_plate["text"] = new_text
+                            cached_plate["confidence"] = confidence
+
+                    # به‌روزرسانی موقعیت BBox ریل‌تایم در فریم جاری
+                    cached_plate["bbox"] = det.get("bbox")
+
+                    active_frame_detections.append(
                         {
-                            "timestamp": asyncio.get_running_loop().time(),
-                            "detections": active_detections_to_draw,
+                            "plate_id": track_id,
+                            "bbox": cached_plate["bbox"],
+                            "confidence": cached_plate["confidence"],
+                            "text": cached_plate["text"],
                         }
                     )
 
-                # رسم Bounding Box متحرک روی فریم جاری
-                annotated_bytes = draw_annotations(frame, active_detections_to_draw)
+                if active_frame_detections:
+                    stream.results.append(
+                        {
+                            "timestamp": asyncio.get_running_loop().time(),
+                            "detections": active_frame_detections,
+                        }
+                    )
+
+                # رسم تمام پلاک‌های فعال موجود در فریم جاری با مقادیر یونیک
+                annotated_bytes = draw_annotations(frame, active_frame_detections)
                 if annotated_bytes:
                     stream.latest_annotated_frame = annotated_bytes
 
+                # کنترل سرعت پخش واقعی
                 elapsed = asyncio.get_running_loop().time() - start_time
                 sleep_time = max(0.001, frame_delay - elapsed)
                 await asyncio.sleep(sleep_time)
