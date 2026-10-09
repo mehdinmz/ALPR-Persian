@@ -25,13 +25,9 @@ OCR_URL = "http://127.0.0.1:8002"
 DETECTION_TIMEOUT = 30.0
 OCR_TIMEOUT = 10.0
 
-# Maximum number of results kept for each active stream.
 MAX_STREAM_RESULTS = 100
-
-# Number of frames per second sent from CCTV/video to Detection.
 DEFAULT_PROCESS_FPS = 5.0
 
-# RTSP reconnect settings.
 RTSP_RECONNECT_DELAY = 3.0
 MAX_RTSP_RECONNECT_ATTEMPTS = 10
 
@@ -44,6 +40,8 @@ VIDEO_EXTENSIONS = {
     ".mpeg",
     ".mpg",
 }
+
+CONFIDENCE_THRESHOLD = 0.60  # حد حداقل کانفیدنس (۶۰٪)
 
 
 # ============================================================
@@ -83,14 +81,10 @@ class StreamState:
 
         self.error = None
 
-        # نگهداری آخرین فریم رسم‌شده برای لایو استریم (MJPEG)
         self.latest_annotated_frame: Optional[bytes] = None
 
 
 streams: dict[str, StreamState] = {}
-
-# Current architecture has a global tracker in Detection.
-# Therefore only one stream may actively use Detection.
 stream_lock = asyncio.Lock()
 
 
@@ -102,7 +96,8 @@ stream_lock = asyncio.Lock()
 async def lifespan(app: FastAPI):
     global http_client
 
-    # trust_env=False برای دور زدن پروکسی‌های سیستم/VPN و جلوگیری از خطای 503
+    streams.clear()
+
     http_client = httpx.AsyncClient(
         trust_env=False,
         timeout=httpx.Timeout(
@@ -119,15 +114,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Stop all streams.
     for stream in list(streams.values()):
         stream.running = False
 
-    tasks = []
-    for stream in list(streams.values()):
-        if stream.task:
-            tasks.append(stream.task)
-
+    tasks = [stream.task for stream in streams.values() if stream.task]
     if tasks:
         await asyncio.gather(
             *tasks,
@@ -182,9 +172,6 @@ def extract_boundary(content_type: str) -> Optional[str]:
 
 
 def draw_annotations(frame_np: np.ndarray, detections: list) -> bytes:
-    """
-    رسم Bounding Box و متن OCR روی تصویر با OpenCV
-    """
     annotated = frame_np.copy()
 
     for det in detections:
@@ -200,7 +187,6 @@ def draw_annotations(frame_np: np.ndarray, detections: list) -> bytes:
 
             label = f"{text} ({conf:.2f})" if text else f"{conf:.2f}"
 
-            # رسم پس‌زمینه متن
             (text_w, text_h), baseline = cv2.getTextSize(
                 label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
             )
@@ -212,7 +198,6 @@ def draw_annotations(frame_np: np.ndarray, detections: list) -> bytes:
                 -1,
             )
 
-            # نوشتن متن روی پس‌زمینه
             cv2.putText(
                 annotated,
                 label,
@@ -338,7 +323,6 @@ async def recognize_crop(crop_bytes: bytes, filename: str):
     client = get_http_client()
 
     try:
-        # ارسال به /predict که در سرویس OCR تعریف شده است
         response = await client.post(
             f"{OCR_URL}/predict",
             files={
@@ -384,51 +368,21 @@ async def recognize_crop(crop_bytes: bytes, filename: str):
 
 async def process_frame(frame_bytes: bytes):
     metadata, crops = await detect_frame(frame_bytes)
-    detections = metadata.get("detections", [])
+    raw_detections = metadata.get("detections", [])
 
-    if not detections:
-        return {"detections": []}
+    # فیلتر آستانه ۶۰٪
+    valid_detections = [
+        d for d in raw_detections if d.get("confidence", 0.0) >= CONFIDENCE_THRESHOLD
+    ]
 
-    tasks = []
-    for detection in detections:
-        crop_filename = detection.get("crop")
+    if not valid_detections:
+        return {"detections": [], "crops": {}}
 
-        if not crop_filename or crop_filename not in crops:
-            tasks.append(
-                asyncio.sleep(
-                    0,
-                    result={
-                        "text": None,
-                        "error": "Missing or invalid crop image.",
-                    },
-                )
-            )
-            continue
-
-        crop_bytes = crops[crop_filename]
-        tasks.append(recognize_crop(crop_bytes, crop_filename))
-
-    ocr_results = await asyncio.gather(*tasks)
-
-    results = []
-    for detection, ocr_result in zip(detections, ocr_results):
-        result = {
-            "track_id": detection.get("track_id"),
-            "bbox": detection.get("bbox"),
-            "confidence": detection.get("confidence"),
-            "text": ocr_result.get("text"),
-        }
-
-        if ocr_result.get("error"):
-            result["ocr_error"] = ocr_result["error"]
-
-        results.append(result)
-
-    return {"detections": results}
+    return {"detections": valid_detections, "crops": crops}
 
 
 # ============================================================
-# IMAGE
+# IMAGE / VIDEO API ENDPOINTS
 # ============================================================
 
 @app.post("/process/image")
@@ -438,136 +392,37 @@ async def process_image(file: UploadFile = File(...)):
     if not image_data:
         raise HTTPException(status_code=400, detail="Empty image file.")
 
-    image_array = np.frombuffer(image_data, dtype=np.uint8)
-    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-
-    if image is None:
-        raise HTTPException(status_code=400, detail="Invalid image file.")
-
     try:
-        result = await process_frame(image_data)
+        res = await process_frame(image_data)
+        detections = res["detections"]
+        crops = res["crops"]
+
+        tasks = []
+        for det in detections:
+            crop_name = det.get("crop")
+            if crop_name in crops:
+                tasks.append(recognize_crop(crops[crop_name], crop_name))
+
+        ocr_results = await asyncio.gather(*tasks) if tasks else []
+
+        final_detections = []
+        for det, ocr in zip(detections, ocr_results):
+            det_copy = dict(det)
+            det_copy["text"] = ocr.get("text")
+            final_detections.append(det_copy)
+
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return {
         "success": True,
         "source": "image",
-        **result,
+        "detections": final_detections,
     }
 
 
 # ============================================================
-# VIDEO
-# ============================================================
-
-async def process_video_file(video_path: Path, process_fps: float):
-    capture = cv2.VideoCapture(str(video_path))
-
-    if not capture.isOpened():
-        raise RuntimeError("Could not open video.")
-
-    fps = capture.get(cv2.CAP_PROP_FPS) or 25.0
-    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    process_fps = min(process_fps, fps)
-    frame_interval = max(1, int(round(fps / process_fps)))
-
-    frame_index = 0
-    processed_frames = 0
-    results = []
-
-    try:
-        while True:
-            success, frame = await asyncio.to_thread(capture.read)
-            if not success:
-                break
-
-            if frame_index % frame_interval != 0:
-                frame_index += 1
-                continue
-
-            encoded, buffer = cv2.imencode(
-                ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90]
-            )
-            if not encoded:
-                frame_index += 1
-                continue
-
-            frame_bytes = buffer.tobytes()
-
-            try:
-                frame_result = await process_frame(frame_bytes)
-            except RuntimeError as exc:
-                raise RuntimeError(f"Frame {frame_index}: {exc}") from exc
-
-            processed_frames += 1
-
-            if frame_result["detections"]:
-                results.append(
-                    {
-                        "frame": frame_index,
-                        "timestamp": frame_index / fps,
-                        "detections": frame_result["detections"],
-                    }
-                )
-
-            frame_index += 1
-            await asyncio.sleep(0.001)
-
-    finally:
-        capture.release()
-
-    return {
-        "fps": fps,
-        "total_frames": total_frames,
-        "processed_frames": processed_frames,
-        "results": results,
-    }
-
-
-@app.post("/process/video")
-async def process_video(
-    file: UploadFile = File(...),
-    process_fps: float = DEFAULT_PROCESS_FPS,
-):
-    suffix = Path(file.filename or "").suffix.lower()
-
-    if suffix not in VIDEO_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Unsupported video format.")
-
-    process_fps = validate_process_fps(process_fps)
-
-    temp_dir = Path("/tmp/alpr")
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    video_path = temp_dir / f"{uuid.uuid4().hex}{suffix}"
-
-    try:
-        with video_path.open("wb") as buffer:
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                buffer.write(chunk)
-
-        try:
-            result = await process_video_file(video_path, process_fps)
-        except RuntimeError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-        return {
-            "success": True,
-            "source": "video",
-            **result,
-        }
-
-    finally:
-        try:
-            video_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-
-
-# ============================================================
-# RTSP / CCTV
+# RTSP / CCTV WORKER (REALTIME TRACKING + OCR BATCHING)
 # ============================================================
 
 async def open_rtsp(url: str):
@@ -603,11 +458,10 @@ async def stream_worker(stream: StreamState):
                 stream.status = "running"
 
             fps = capture.get(cv2.CAP_PROP_FPS) or 25.0
-            frame_delay = 1.0 / fps  # محاسبه زمان واقعی هر فریم برای سرعت نرمال
+            frame_delay = 1.0 / fps
 
-            # بافر ۱۰ فریمی برای ذخیره بهترین پلاک
-            ten_frame_buffer = []
-            best_detection_for_group = []
+            hundred_frame_buffer = []
+            cached_ocr_text = ""
 
             while stream.running:
                 start_time = asyncio.get_running_loop().time()
@@ -619,7 +473,6 @@ async def stream_worker(stream: StreamState):
                 stream.frames_read += 1
                 stream.last_frame_at = asyncio.get_running_loop().time()
 
-                # تبدیل فریم به باینری
                 encoded, buffer = cv2.imencode(
                     ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85]
                 )
@@ -628,56 +481,66 @@ async def stream_worker(stream: StreamState):
 
                 frame_bytes = buffer.tobytes()
 
-                # پردازش فریم در مدل
+                # دیتکشن ریل‌تایم برای هر فریم جهت Tracking دقیق BBox
                 try:
                     async with stream_lock:
-                        result = await process_frame(frame_bytes)
+                        frame_res = await process_frame(frame_bytes)
                 except Exception as exc:
                     stream.error = str(exc)
                     await asyncio.sleep(0.01)
                     continue
 
                 stream.frames_processed += 1
-                detections = result.get("detections", [])
+                detections = frame_res.get("detections", [])
+                crops = frame_res.get("crops", {})
 
-                # ذخیره در بافر ۱۰ فریمی
-                ten_frame_buffer.append((frame, detections))
+                # ذخیره فریم و دیتکشن‌های آن در بافر ۱۰۰ فریمی
+                hundred_frame_buffer.append((detections, crops))
 
-                # وقتی ۱۰ فریم کامل شد: بالاترین کانفیدنس را انتخاب کن
-                if len(ten_frame_buffer) == 10:
-                    best_conf = -1.0
-                    best_det = None
-                    best_frame = ten_frame_buffer[-1][0]  # فریم پیش‌فرض
+                # وقتی ۱۰۰ فریم پر شد: OCR را برای بهترین فریم اجرا و متن را آپدیت کن
+                if len(hundred_frame_buffer) == 100:
+                    best_conf = CONFIDENCE_THRESHOLD
+                    best_crop_bytes = None
+                    best_crop_name = None
 
-                    for f, dets in ten_frame_buffer:
+                    for dets, crps in hundred_frame_buffer:
                         for d in dets:
                             conf = d.get("confidence", 0.0)
-                            if conf > best_conf:
+                            c_name = d.get("crop")
+                            if conf > best_conf and c_name in crps:
                                 best_conf = conf
-                                best_det = d
-                                best_frame = f
+                                best_crop_bytes = crps[c_name]
+                                best_crop_name = c_name
 
-                    if best_det:
-                        best_detection_for_group = [best_det]
-                        # ذخیره پلاک برتر در نتایج کلی
-                        stream.results.append(
-                            {
-                                "timestamp": asyncio.get_running_loop().time(),
-                                "detections": best_detection_for_group,
-                            }
-                        )
+                    if best_crop_bytes and best_crop_name:
+                        ocr_res = await recognize_crop(best_crop_bytes, best_crop_name)
+                        cached_ocr_text = ocr_res.get("text") or cached_ocr_text
+                    else:
+                        cached_ocr_text = ""
 
-                    # پاک‌سازی بافر ۱۰ فریمی برای گروه بعدی
-                    ten_frame_buffer.clear()
+                    hundred_frame_buffer.clear()
 
-                # رسم آخرین پلاک برتر انتخاب‌شده روی فریم جاری
-                annotated_bytes = draw_annotations(
-                    frame, best_detection_for_group
-                )
+                # اگر در فریم جاری پلاک وجود دارد، مختصات BBox ریل‌تایم با متن OCR تثبیت‌شده ترکیب شود
+                active_detections_to_draw = []
+                if detections:
+                    for det in detections:
+                        det_copy = dict(det)
+                        det_copy["text"] = cached_ocr_text
+                        active_detections_to_draw.append(det_copy)
+
+                    # ذخیره نتیجه در لیست
+                    stream.results.append(
+                        {
+                            "timestamp": asyncio.get_running_loop().time(),
+                            "detections": active_detections_to_draw,
+                        }
+                    )
+
+                # رسم Bounding Box متحرک روی فریم جاری
+                annotated_bytes = draw_annotations(frame, active_detections_to_draw)
                 if annotated_bytes:
                     stream.latest_annotated_frame = annotated_bytes
 
-                # کنترل سرعت پخش (تطبیق زمان پردازش با FPS واقعی ویدیو)
                 elapsed = asyncio.get_running_loop().time() - start_time
                 sleep_time = max(0.001, frame_delay - elapsed)
                 await asyncio.sleep(sleep_time)
@@ -696,7 +559,7 @@ async def stream_worker(stream: StreamState):
 
 
 # ============================================================
-# START / STOP STREAMS
+# START / STOP / LIVE ENDPOINTS
 # ============================================================
 
 @app.post("/streams/start")
@@ -789,14 +652,7 @@ async def stop_stream(stream_id: str):
     }
 
 
-# ============================================================
-# LIVE STREAM VIEW (MJPEG)
-# ============================================================
-
 async def mjpeg_generator(stream_id: str):
-    """
-    تولید کننده استریم MJPEG زنده
-    """
     stream = streams.get(stream_id)
     if not stream:
         return
@@ -809,14 +665,11 @@ async def mjpeg_generator(stream_id: str):
                 + stream.latest_annotated_frame
                 + b"\r\n"
             )
-        await asyncio.sleep(0.04)  # حدود 25 فریم در ثانیه برای خروجی نرم در پخش‌کننده
+        await asyncio.sleep(0.04)
 
 
 @app.get("/streams/{stream_id}/live")
 async def live_stream(stream_id: str):
-    """
-    مشاهده زنده تصویر پردازش‌شده همراه با باکس و متن OCR در مرورگر یا VLC
-    """
     stream = streams.get(stream_id)
     if stream is None:
         raise HTTPException(status_code=404, detail="Stream not found.")
@@ -826,10 +679,6 @@ async def live_stream(stream_id: str):
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
-
-# ============================================================
-# HEALTH & ROOT
-# ============================================================
 
 @app.get("/health")
 async def health():
@@ -859,22 +708,6 @@ async def health():
             "ocr": ocr_status,
         },
         "active_streams": active_streams,
-    }
-
-
-@app.get("/")
-async def root():
-    return {
-        "message": "ALPR Gateway is running",
-        "endpoints": {
-            "image": "POST /process/image",
-            "video": "POST /process/video",
-            "stream_start": "POST /streams/start",
-            "stream_live": "GET /streams/{stream_id}/live",
-            "stream_results": "GET /streams/{stream_id}/results",
-            "stream_stop": "POST /streams/{stream_id}/stop",
-            "health": "GET /health",
-        },
     }
 
 
