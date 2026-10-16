@@ -16,7 +16,7 @@ def trusted_torch_load(*args, **kwargs):
 torch.load = trusted_torch_load
 
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "Models" / "license_plate_detector_s.pt"
+MODEL_PATH = BASE_DIR / ".." /"Models" / "license_plate_detector_s.pt"
 
 
 class ModelExporter:

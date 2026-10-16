@@ -5,7 +5,7 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# System dependencies
+# System dependencies (اضافه شدن libgl1 برای رفع خطای OpenCV)
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender1 \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
@@ -26,13 +27,11 @@ RUN pip install --no-cache-dir \
     torchaudio==2.11.0 \
     --index-url https://download.pytorch.org/whl/cu128
 
-# TensorRT
-RUN pip install --no-cache-dir \
-    tensorrt==11.3.0.99
+# TensorRT runtime.
+RUN pip install --no-cache-dir --only-binary=:all: --index-url https://pypi.nvidia.com --extra-index-url https://pypi.org/simple tensorrt==11.3.0.99
 
 # Python dependencies
 COPY requirements.txt .
-
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
@@ -42,11 +41,11 @@ COPY util.py .
 COPY sort ./sort
 COPY Models ./Models
 
-# Export PyTorch model to TensorRT during BUILD
-RUN python3 exporting_to_trt.py
+# Runtime model is already included in Models; do not export during image build.
+# TensorRT engines are GPU- and TensorRT-version-specific and should be built separately.
 
-# Detection API
+# Detection API Port
 EXPOSE 8001
 
-# Run API only
+# Run API
 CMD ["python3", "main.py"]

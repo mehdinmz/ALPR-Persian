@@ -1,3 +1,4 @@
+
 import cv2
 import torch
 import numpy as np
@@ -16,7 +17,7 @@ from ultralytics import YOLO
 
 class ANPR:
 
-    def __init__(self, model_path="Models/license_plate_detector_s.engine"):
+    def __init__(self, model_path="Models/license_plate_detector_m.engine"):
 
         self.device = (
             "cuda:0"
@@ -39,9 +40,6 @@ class ANPR:
         self.tracks = {}
         self.next_track_id = 0
 
-        self.max_missing_frames = 5
-        self.iou_threshold = 0.10
-
     # ========================================================
     # Detection
     # ========================================================
@@ -49,23 +47,19 @@ class ANPR:
     def detect_plates(self, im0):
 
         results = self.model.predict(
-            im0,
+            source=im0,
             verbose=False,
             conf=0.37,
-            device=0 if torch.cuda.is_available() else "cpu"
+            device=0 if torch.cuda.is_available() else "cpu",
+            task="detect"
         )
 
-        boxes = []
+        detections = []
 
-        if not results:
-            return boxes
+        if not results or results[0].boxes is None:
+            return detections
 
-        result = results[0]
-
-        if result.boxes is None:
-            return boxes
-
-        for box in result.boxes:
+        for box in results[0].boxes:
 
             xyxy = (
                 box.xyxy[0]
@@ -74,20 +68,16 @@ class ANPR:
                 .astype(int)
             )
 
-            confidence = float(
-                box.conf[0]
-                .cpu()
-                .numpy()
-            )
+            confidence = float(box.conf[0].item())
 
-            x1, y1, x2, y2 = xyxy
+            x1, y1, x2, y2 = xyxy.tolist()
 
-            boxes.append({
+            detections.append({
                 "bbox": [x1, y1, x2, y2],
                 "confidence": confidence
             })
 
-        return boxes
+        return detections
 
     # ========================================================
     # IoU
@@ -141,110 +131,117 @@ class ANPR:
     # Tracker
     # ========================================================
 
-    def update_tracks(self, detections):
+    def update_tracks(
+        self,
+        boxes,
+        iou_threshold=0.10,
+        max_missing_frames=5
+    ):
 
-        updated_tracks = {}
+        # Detection dictionaries -> bounding boxes
+        current_boxes = [
+            np.asarray(d["bbox"], dtype=np.float32)
+            for d in boxes
+        ]
 
-        used_track_ids = set()
-
-        # ----------------------------------------------------
-        # Match detections with existing tracks
-        # ----------------------------------------------------
-
-        for detection in detections:
-
-            bbox = detection["bbox"]
-
-            best_track_id = None
-            best_iou = 0.0
-
-            for track_id, track in self.tracks.items():
-
-                if track_id in used_track_ids:
-                    continue
-
-                iou = self.calculate_iou(
-                    bbox,
-                    track["bbox"]
-                )
-
-                if iou > best_iou:
-
-                    best_iou = iou
-                    best_track_id = track_id
-
-            # ------------------------------------------------
-            # Existing track
-            # ------------------------------------------------
-
-            if (
-                best_track_id is not None
-                and best_iou >= self.iou_threshold
-            ):
-
-                track = self.tracks[
-                    best_track_id
-                ]
-
-                track["bbox"] = bbox
-                track["confidence"] = (
-                    detection["confidence"]
-                )
-                track["missing"] = 0
-
-                updated_tracks[
-                    best_track_id
-                ] = track
-
-                used_track_ids.add(
-                    best_track_id
-                )
-
-            # ------------------------------------------------
-            # New track
-            # ------------------------------------------------
-
-            else:
-
-                track_id = self.next_track_id
-
-                self.next_track_id += 1
-
-                updated_tracks[
-                    track_id
-                ] = {
-                    "bbox": bbox,
-                    "confidence": (
-                        detection["confidence"]
-                    ),
-                    "missing": 0
-                }
-
-                used_track_ids.add(
-                    track_id
-                )
-
-        # ----------------------------------------------------
-        # Keep missing tracks
-        # ----------------------------------------------------
+        predicted_boxes = {}
 
         for track_id, track in self.tracks.items():
 
-            if track_id in updated_tracks:
-                continue
+            predicted_boxes[track_id] = (
+                track["bbox"] + track["velocity"]
+            )
 
-            track["missing"] += 1
+        unmatched_track_ids = set(self.tracks.keys())
+        unmatched_box_indices = set(range(len(current_boxes)))
+        matches = []
+
+        while unmatched_track_ids and unmatched_box_indices:
+
+            best_iou = 0.0
+            best_track_id = None
+            best_box_index = None
+
+            for track_id in unmatched_track_ids:
+
+                predicted_box = predicted_boxes[track_id]
+
+                for box_index in unmatched_box_indices:
+
+                    iou = self.calculate_iou(
+                        predicted_box,
+                        current_boxes[box_index]
+                    )
+
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_track_id = track_id
+                        best_box_index = box_index
 
             if (
-                track["missing"]
-                <= self.max_missing_frames
+                best_track_id is None
+                or best_iou < iou_threshold
             ):
+                break
 
-                updated_tracks[
-                    track_id
-                ] = track
+            matches.append((best_track_id, best_box_index))
 
-        self.tracks = updated_tracks
+            unmatched_track_ids.remove(best_track_id)
+            unmatched_box_indices.remove(best_box_index)
+
+        # ----------------------------------------------------
+        # Update matched tracks
+        # ----------------------------------------------------
+
+        for track_id, box_index in matches:
+
+            track = self.tracks[track_id]
+
+            previous_bbox = track["bbox"].copy()
+            current_bbox = current_boxes[box_index]
+
+            movement = current_bbox - previous_bbox
+
+            track["velocity"] = (
+                0.7 * track["velocity"]
+                + 0.3 * movement
+            )
+
+            track["bbox"] = current_bbox
+            track["confidence"] = boxes[box_index]["confidence"]
+            track["missed"] = 0
+            track["predicted"] = False
+
+        # ----------------------------------------------------
+        # Update unmatched tracks
+        # ----------------------------------------------------
+
+        for track_id in list(unmatched_track_ids):
+
+            track = self.tracks[track_id]
+
+            track["bbox"] = predicted_boxes[track_id]
+            track["missed"] += 1
+            track["predicted"] = True
+
+            if track["missed"] > max_missing_frames:
+                del self.tracks[track_id]
+
+        # ----------------------------------------------------
+        # Create new tracks
+        # ----------------------------------------------------
+
+        for box_index in unmatched_box_indices:
+
+            self.tracks[self.next_track_id] = {
+                "bbox": current_boxes[box_index],
+                "velocity": np.zeros(4, dtype=np.float32),
+                "confidence": boxes[box_index]["confidence"],
+                "missed": 0,
+                "predicted": False
+            }
+
+            self.next_track_id += 1
 
         return self.tracks
 
@@ -256,35 +253,20 @@ class ANPR:
 
         h, w = image.shape[:2]
 
-        x1, y1, x2, y2 = bbox
+        x1, y1, x2, y2 = [
+            int(v) for v in bbox
+        ]
 
-        x1 = max(
-            0,
-            min(x1, w - 1)
-        )
+        x1 = max(0, min(x1, w - 1))
+        y1 = max(0, min(y1, h - 1))
 
-        y1 = max(
-            0,
-            min(y1, h - 1)
-        )
-
-        x2 = max(
-            0,
-            min(x2, w)
-        )
-
-        y2 = max(
-            0,
-            min(y2, h)
-        )
+        x2 = max(0, min(x2, w))
+        y2 = max(0, min(y2, h))
 
         if x2 <= x1 or y2 <= y1:
             return None
 
-        crop = image[
-            y1:y2,
-            x1:x2
-        ]
+        crop = image[y1:y2, x1:x2]
 
         if crop.size == 0:
             return None
@@ -335,10 +317,8 @@ def health():
 # Multipart response helper
 # ============================================================
 
-def create_multipart_response(
-    metadata,
-    images
-):
+def create_multipart_response(metadata, images):
+
     """
     Creates a multipart/mixed HTTP response.
 
@@ -365,8 +345,7 @@ def create_multipart_response(
         (
             f"--{boundary}\r\n"
             "Content-Type: application/json\r\n"
-            "Content-Disposition: form-data; "
-            'name="metadata"\r\n'
+            'Content-Disposition: form-data; name="metadata"\r\n'
             "\r\n"
         ).encode("utf-8")
     )
@@ -390,8 +369,7 @@ def create_multipart_response(
             (
                 f"--{boundary}\r\n"
                 "Content-Type: image/jpeg\r\n"
-                f'Content-Disposition: attachment; '
-                f'filename="{filename}"\r\n'
+                f'Content-Disposition: attachment; filename="{filename}"\r\n'
                 "\r\n"
             ).encode("utf-8")
         )
@@ -404,17 +382,12 @@ def create_multipart_response(
     # --------------------------------------------------------
 
     body.extend(
-        (
-            f"--{boundary}--\r\n"
-        ).encode("utf-8")
+        f"--{boundary}--\r\n".encode("utf-8")
     )
 
     return Response(
         content=bytes(body),
-        media_type=(
-            f"multipart/mixed; "
-            f"boundary={boundary}"
-        )
+        media_type=f"multipart/mixed; boundary={boundary}"
     )
 
 
@@ -423,9 +396,7 @@ def create_multipart_response(
 # ============================================================
 
 @app.post("/detect")
-async def detect(
-    file: UploadFile = File(...)
-):
+async def detect(file: UploadFile = File(...)):
 
     # --------------------------------------------------------
     # Read binary image
@@ -434,7 +405,6 @@ async def detect(
     image_bytes = await file.read()
 
     if not image_bytes:
-
         raise HTTPException(
             status_code=400,
             detail="Empty image"
@@ -455,7 +425,6 @@ async def detect(
     )
 
     if image is None:
-
         raise HTTPException(
             status_code=400,
             detail="Invalid image"
@@ -465,14 +434,10 @@ async def detect(
     # Detection
     # --------------------------------------------------------
 
-    detections = anpr.detect_plates(
-        image
-    )
+    detections = anpr.detect_plates(image)
 
     # --------------------------------------------------------
     # Tracking
-    #
-    # Same ANPR instance is kept alive between requests.
     # --------------------------------------------------------
 
     with tracker_lock:
@@ -480,6 +445,16 @@ async def detect(
         tracks = anpr.update_tracks(
             detections
         )
+
+        # Copy current tracks to avoid processing tracks
+        # that were removed during the update.
+        tracks = {
+            track_id: {
+                **track,
+                "bbox": track["bbox"].copy()
+            }
+            for track_id, track in tracks.items()
+        }
 
     # --------------------------------------------------------
     # Prepare response
@@ -489,6 +464,11 @@ async def detect(
     images = []
 
     for track_id, track in tracks.items():
+
+        # Do not return predicted boxes without a current
+        # detection, because they may not match this image.
+        if track["predicted"]:
+            continue
 
         bbox = track["bbox"]
 
@@ -514,9 +494,7 @@ async def detect(
 
         crop_bytes = buffer.tobytes()
 
-        filename = (
-            f"plate_{track_id}.jpg"
-        )
+        filename = f"plate_{track_id}.jpg"
 
         # ----------------------------------------------------
         # Metadata
@@ -526,8 +504,7 @@ async def detect(
             "track_id": int(track_id),
 
             "bbox": [
-                int(v)
-                for v in bbox
+                int(v) for v in bbox
             ],
 
             "confidence": float(
@@ -549,7 +526,7 @@ async def detect(
         )
 
     # --------------------------------------------------------
-    # Metadata
+    # Response metadata
     # --------------------------------------------------------
 
     metadata = {
