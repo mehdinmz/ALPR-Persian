@@ -1252,6 +1252,51 @@
 
 
         // ====================================================
+        // PLATE TEXT RENDERING
+        // ====================================================
+        // مشکل: صفحه RTL است و ترکیب «رقم + حرف + رقم» با dir="auto" جهت RTL می‌گیرد
+        // و بلوک‌ها از راست به چپ چیده می‌شوند، یعنی ترتیب پلاک به‌هم می‌ریزد.
+        // راه‌حل: پلاک را به ۴ بخش ثابت (۲ رقم | حرف | ۳ رقم | کد ایران) می‌شکنیم
+        // و هر بخش را داخل یک ظرف LTR کنار هم می‌چینیم؛ هیچ وابستگی به bidi نمی‌ماند.
+
+        // اگر خروجی OCR به‌ترتیب معکوس می‌آید (مثلاً کد ایران اول)، این را true کن.
+        const PLATE_TEXT_IS_REVERSED = false;
+
+        const PLATE_DIGIT_RE = /^[0-9\u06F0-\u06F9\u0660-\u0669]$/;
+
+        function renderPlateText(rawText) {
+            let chars = Array.from(String(rawText ?? '').trim());
+
+            if (PLATE_TEXT_IS_REVERSED) {
+                chars = chars.reverse();
+            }
+
+            const isStandardPlate =
+                chars.length === 8 &&
+                !PLATE_DIGIT_RE.test(chars[2]) &&
+                [0, 1, 3, 4, 5, 6, 7].every(i => PLATE_DIGIT_RE.test(chars[i]));
+
+            // قالب ناشناخته: همان متن را فقط با جهت LTR نشان بده
+            if (!isStandardPlate) {
+                return `<span dir="ltr" style="unicode-bidi: isolate;">${escapeHtml(chars.join(''))}</span>`;
+            }
+
+            const part = s => escapeHtml(s);
+
+            return `
+                <span dir="ltr"
+                      class="inline-flex items-center gap-2 align-middle"
+                      style="unicode-bidi: isolate;">
+                    <span>${part(chars.slice(0, 2).join(''))}</span>
+                    <span>${part(chars[2])}</span>
+                    <span>${part(chars.slice(3, 6).join(''))}</span>
+                    <span class="border-l border-slate-500 pl-2">${part(chars.slice(6, 8).join(''))}</span>
+                </span>
+            `;
+        }
+
+
+        // ====================================================
         // PLATE TABLE
         // ====================================================
 
@@ -1274,8 +1319,7 @@
             const sorted = [...plates].reverse();
 
             tbody.innerHTML = sorted.map(plate => {
-                const plateText = escapeHtml(plate.text || '---');
-                const plateId = Number(plate.plate_id || 0);
+                                const plateId = Number(plate.plate_id || 0);
                 const confidence = Number(plate.confidence || 0);
 
                 const time = plate.timestamp
@@ -1288,8 +1332,7 @@
                     <tr class="hover:bg-slate-800/50 transition">
 
                         <td class="p-3 font-mono font-bold text-emerald-400">
-                            <!-- استفاده از dir="auto" و bdi بدون اجبار ltr برای تشخیص درست جهت ارقام و حروف فارسی -->
-                            <bdi dir="auto" style="unicode-bidi: isolate;">${plateText}</bdi>
+                            ${plate.text ? renderPlateText(plate.text) : '---'}
 
                             <span class="text-xs text-slate-500 font-normal mr-2">
                                 (ID: ${plateId || '-'})
