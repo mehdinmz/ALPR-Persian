@@ -440,7 +440,7 @@
                 </div>
 
                 <p class="text-xs text-slate-400 mb-3">
-                    هر استریم را جداگانه مشاهده یا متوقف کن.
+                    هر استریم را جداگانه مشاهده، متوقف یا حذف کن.
                 </p>
 
                 <div
@@ -721,8 +721,7 @@
             button.innerText = 'در حال آپلود...';
 
             $('upload-progress-container').classList.remove('hidden');
-            $('upload-progress-bar').style.width = '0%';
-            $('upload-progress-text').innerText =
+            $('upload-progress-bar').style.width = '0\%';$('upload-progress-text').innerText =
                 'در حال ارسال فایل به سرور...';
 
             try {
@@ -733,8 +732,7 @@
 
                 const data = await uploadVideoWithProgress(form, file.size);
 
-                $('upload-progress-bar').style.width = '100%';
-                $('upload-progress-text').innerText = 'آپلود کامل شد.';
+                $('upload-progress-bar').style.width = '100\%';$('upload-progress-text').innerText = 'آپلود کامل شد.';
 
                 await selectStream(data.stream_id);
                 await refreshStreams();
@@ -868,8 +866,7 @@
                     }
 
                     $('live-video-feed').src = '';
-                    $('live-video-feed').classList.add('hidden');
-                    $('placeholder-text').classList.remove('hidden');
+                    $('live-video-feed').classList.add('hidden');$('placeholder-text').classList.remove('hidden');
 
                     $('selected-stream-label').innerText =
                         'استریمی انتخاب نشده است';
@@ -886,6 +883,65 @@
 
             } catch (error) {
                 alert(`توقف استریم ناموفق بود:\n${error.message}`);
+            }
+        }
+
+
+        // ====================================================
+        // DELETE STREAM (Bug 1 Fix)
+        // ====================================================
+
+        async function deleteStream(streamId, status) {
+            if (status === 'running') {
+                alert('امکان حذف استریم در حال اجرا وجود ندارد. ابتدا آن را متوقف کنید.');
+                return;
+            }
+
+            if (!confirm(`آیا از حذف استریم ${streamId.slice(0, 8)} اطمینان دارید؟`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/streams/${encodeURIComponent(streamId)}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    throw new Error(data.detail || `خطای HTTP ${response.status}`);
+                }
+
+                if (currentStreamId === streamId) {
+                    currentStreamId = null;
+
+                    if (pollingInterval) {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                    }
+
+                    $('live-video-feed').src = '';
+                    $('live-video-feed').classList.add('hidden');$('placeholder-text').classList.remove('hidden');
+
+                    $('selected-stream-label').innerText =
+                        'استریمی انتخاب نشده است';
+
+                    $('btn-stop').disabled = true;
+                    $('btn-stop').className =
+                        'bg-red-600/50 text-white px-5 py-2 rounded-lg text-sm cursor-not-allowed';
+
+                    $('stat-status').innerText = 'غیرفعال';
+                    $('fps-counter').innerText = 'آماده';
+                    $('stat-total-plates').innerText = '0';
+                    $('stat-frames-read').innerText = '0';$('stat-frames-processed').innerText = '0';
+
+                    updatePlatesTable([]);
+                }
+
+                await refreshStreams();
+
+            } catch (error) {
+                alert(`حذف استریم ناموفق بود:\n${error.message}`);
             }
         }
 
@@ -926,6 +982,7 @@
 
             list.innerHTML = streams.map(stream => {
                 const id = escapeHtml(stream.stream_id);
+                const status = escapeHtml(stream.status);
                 const selected = stream.stream_id === currentStreamId;
                 const statusColor = getStatusColor(stream.status);
 
@@ -999,7 +1056,7 @@
                             <button
                                 onclick="selectStream('${id}')"
                                 class="flex-1 bg-indigo-600 hover:bg-indigo-500
-                                       rounded px-3 py-2 text-xs"
+                                       rounded px-3 py-2 text-xs text-white"
                             >
                                 مشاهده
                             </button>
@@ -1007,7 +1064,7 @@
                             <button
                                 onclick="downloadJson('${id}')"
                                 class="bg-slate-700 hover:bg-slate-600
-                                       rounded px-3 py-2 text-xs"
+                                       rounded px-3 py-2 text-xs text-white"
                             >
                                 دانلود JSON
                             </button>
@@ -1018,13 +1075,22 @@
                                         <button
                                             onclick="stopStream('${id}')"
                                             class="bg-red-600 hover:bg-red-500
-                                                   rounded px-3 py-2 text-xs"
+                                                   rounded px-3 py-2 text-xs text-white"
                                         >
                                             توقف
                                         </button>
                                       `
                                     : ''
                             }
+
+                            <button
+                                onclick="deleteStream('${id}', '${status}')"
+                                ${stream.running ? 'disabled' : ''}
+                                class="bg-rose-700 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed
+                                       rounded px-3 py-2 text-xs text-white"
+                            >
+                                حذف
+                            </button>
 
                         </div>
 
@@ -1079,7 +1145,6 @@
                 }
 
                 if (!stream.running && stream.status !== 'completed') {
-                    // استریم متوقف یا ناموفق شده است.
                     $('btn-stop').disabled = true;
                 }
 
@@ -1112,7 +1177,7 @@
                     Number(data.total_unique_plates || 0);
 
             } catch (error) {
-                // ممکن است استریم در همان لحظه از دسترس خارج شده باشد.
+                // ممکن است استریم در همان لحظه حذف شده یا از دسترس خارج شده باشد.
             }
         }
 
@@ -1163,8 +1228,7 @@
                 imageObjectUrl = URL.createObjectURL(file);
 
                 $('live-video-feed').src = imageObjectUrl;
-                $('live-video-feed').classList.remove('hidden');
-                $('placeholder-text').classList.add('hidden');
+                $('live-video-feed').classList.remove('hidden');$('placeholder-text').classList.add('hidden');
 
                 $('viewer-title').innerText = 'تصویر انتخاب‌شده';
                 $('fps-counter').innerText = 'پردازش تصویر کامل شد';
@@ -1173,8 +1237,7 @@
                 $('stat-total-plates').innerText =
                     (data.detections || []).length;
 
-                $('stat-frames-read').innerText = '1';
-                $('stat-frames-processed').innerText = '1';
+                $('stat-frames-read').innerText = '1';$('stat-frames-processed').innerText = '1';
 
                 updatePlatesTable(data.detections || []);
 
@@ -1225,7 +1288,8 @@
                     <tr class="hover:bg-slate-800/50 transition">
 
                         <td class="p-3 font-mono font-bold text-emerald-400">
-                            <bdi dir="ltr">${plateText}</bdi>
+                            <!-- استفاده از dir="auto" و bdi بدون اجبار ltr برای تشخیص درست جهت ارقام و حروف فارسی -->
+                            <bdi dir="auto" style="unicode-bidi: isolate;">${plateText}</bdi>
 
                             <span class="text-xs text-slate-500 font-normal mr-2">
                                 (ID: ${plateId || '-'})

@@ -449,8 +449,8 @@ def draw_annotations(frame_np: np.ndarray, detections: list) -> Optional[bytes]:
         confidence = float(det.get("confidence", 0.0))
         label = f"{text} ({confidence:.2f})"
 
-        visual_label = arabic_reshaper.reshape(label)
-        visual_label = get_display(visual_label)
+        # اصلاح ترتیب رندرینگ متون فارسی و اعداد
+        visual_label = get_display(arabic_reshaper.reshape(label))
 
         text_bbox = draw.textbbox((0, 0), visual_label, font=font)
         text_w = text_bbox[2] - text_bbox[0]
@@ -769,7 +769,6 @@ async def stream_worker(stream: StreamState):
 
                     if encoded:
                         try:
-                            # حفظ رفتار فعلی Gateway؛ درخواست‌های مدل سری می‌شوند.
                             async with stream_lock:
                                 frame_res = await process_frame(buffer.tobytes())
 
@@ -998,6 +997,43 @@ async def upload_video(
     }
 
 
+# ============================================================
+# DELETE STREAM ENDPOINT (Bug 1 Fix)
+# ============================================================
+
+@app.delete("/streams/{stream_id}")
+async def delete_stream(stream_id: str):
+    stream = streams.get(stream_id)
+
+    if stream is None:
+        raise HTTPException(status_code=404, detail="Stream not found.")
+
+    # جلوگیری از حذف استریم‌های در حال اجرا
+    if stream.running:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete a running stream. Stop it first.",
+        )
+
+    # حذف از دیکشنری حافظه
+    streams.pop(stream_id, None)
+
+    # پاکسازی فایل JSON خروجی مرتبط در صورت وجود
+    output_dir = Path(tempfile.gettempdir()) / "alpr_outputs"
+    file_path = output_dir / f"plates_{stream_id}.json"
+    if file_path.exists():
+        try:
+            file_path.unlink()
+        except Exception:
+            pass
+
+    return {
+        "success": True,
+        "stream_id": stream_id,
+        "message": f"Stream {stream_id} deleted successfully",
+    }
+
+
 @app.get("/streams/{stream_id}/save-json")
 async def save_stream_json(stream_id: str):
     stream = streams.get(stream_id)
@@ -1069,7 +1105,6 @@ async def mjpeg_generator(stream_id: str):
     if stream is None:
         return
 
-    # منتظر پرشدن بافر می‌مانیم، اما ویدیوی کوتاه را معطل نمی‌کنیم.
     while (
         stream.running
         and stream.playback_queue.qsize() < PRE_BUFFER_FRAMES
@@ -1137,16 +1172,10 @@ async def health():
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard():
     html_path = BASE_DIR / "template" / "index.html"
-
     if html_path.is_file():
         return html_path.read_text(encoding="utf-8")
-
-    return "<h1>فایل template/index.html پیدا نشد.</h1>"
+    return HTMLResponse("Dashboard template (template/index.html) not found.", status_code=404)
 
 
 if __name__ == "__main__":
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000,
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
