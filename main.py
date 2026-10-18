@@ -28,8 +28,14 @@ from bidi.algorithm import get_display
 # ============================================================
 BASE_DIR = Path(__file__).resolve().parent
 
-DETECTION_URL = "http://127.0.0.1:8001"
-OCR_URL = "http://127.0.0.1:8002"
+DETECTION_URL = os.getenv(
+    "DETECTION_URL",
+    "http://127.0.0.1:8001"
+)
+OCR_URL = os.getenv(
+    "OCR_URL",
+    "http://127.0.0.1:8002"
+)
 
 DETECTION_TIMEOUT = 30.0
 OCR_TIMEOUT = 10.0

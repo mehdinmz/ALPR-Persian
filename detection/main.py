@@ -288,11 +288,45 @@ app = FastAPI(
 # Load model ONCE
 # ============================================================
 
-anpr = ANPR(
-    model_path="Models/license_plate_detector_s.engine"
-)
+from pathlib import Path
+import subprocess
+import sys
 
+BASE_DIR = Path(__file__).resolve().parent
 
+ENGINE_PATH = BASE_DIR / "Models" / "license_plate_detector_s.engine"
+PT_PATH = BASE_DIR / "Models" / "license_plate_detector_s.pt"
+EXPORT_SCRIPT = BASE_DIR / "Scripts" / "exporting_to_trt.py"
+
+# Export TensorRT engine if it does not exist
+if not ENGINE_PATH.exists():
+
+    print("TensorRT engine not found.")
+
+    if not PT_PATH.exists():
+        raise FileNotFoundError(
+            f"PyTorch model not found: {PT_PATH}"
+        )
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA GPU is required to export the TensorRT engine."
+        )
+
+    print("Exporting TensorRT engine. This may take a few minutes...")
+
+    subprocess.run(
+        [sys.executable, str(EXPORT_SCRIPT)],
+        cwd=str(BASE_DIR),
+        check=True
+    )
+
+if not ENGINE_PATH.exists():
+    raise FileNotFoundError(
+        f"TensorRT engine was not created: {ENGINE_PATH}"
+    )
+
+anpr = ANPR(model_path=str(ENGINE_PATH))
 # ============================================================
 # Tracker lock
 # ============================================================

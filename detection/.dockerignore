@@ -1,24 +1,17 @@
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.jpg
-*.jpeg
-*.png
-
-*.onnx
-*.onnx.data
-*.engine
-*.pt
-Models/*
-!Models/license_plate_detector_s.engine
-
-*.ipynb
 
 .venv/
+venv/
 __pycache__/
+*.py[cod]
 .ipynb_checkpoints/
 .git/
 **/.git/
-sort/data/
-sort/README.md
+
+Data Samples/
+Notebooks/
+Output/
+Scripts/__pycache__/
+
+Models/*
+!Models/license_plate_detector_s.pt
+!Models/

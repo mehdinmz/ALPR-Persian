@@ -1,0 +1,25 @@
+services:
+  detection:
+    image: alpr-detection:latest
+    gpus: all
+    restart: unless-stopped
+    expose:
+      - "8001"
+
+  ocr:
+    image: alpr-ocr:latest
+    expose:
+      - "8002"
+    restart: unless-stopped
+
+  gateway:
+    image: alpr-gateway:latest
+    environment:
+      DETECTION_URL: http://detection:8001
+      OCR_URL: http://ocr:8002
+    ports:
+      - "8000:8000"
+    depends_on:
+      - detection
+      - ocr
+    restart: unless-stopped
