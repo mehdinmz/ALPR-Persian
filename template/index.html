@@ -3,134 +3,485 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>سامانه جامع پلاک‌خوان هوشمند (ALPR Gateway)</title>
+
+    <title>سامانه مانیتورینگ پلاک‌خوان هوشمند</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap"
+        rel="stylesheet"
+    >
+
     <style>
-        body { font-family: 'Vazirmatn', sans-serif; }
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+        }
+
+        input, button {
+            font-family: inherit;
+        }
+
+        .stream-card {
+            transition: border-color 0.2s ease;
+        }
+
+        .stream-card.selected {
+            border-color: #10b981;
+        }
+
+        .break-anywhere {
+            overflow-wrap: anywhere;
+        }
     </style>
 </head>
+
 <body class="bg-slate-900 text-slate-100 min-h-screen">
 
-    <!-- هدر سایت -->
+    <!-- Header -->
     <header class="bg-slate-800 border-b border-slate-700 p-4 shadow-md">
-        <div class="container mx-auto flex justify-between items-center">
+        <div class="container mx-auto flex flex-col sm:flex-row
+                    justify-between items-start sm:items-center gap-3">
+
             <h1 class="text-xl font-bold text-emerald-400 flex items-center gap-2">
-                <span>🚗</span> سامانه مانیتورینگ و پلاک‌خوان هوشمند
+                <span>🚗</span>
+                سامانه مانیتورینگ و پلاک‌خوان هوشمند
             </h1>
-            <div id="system-status" class="flex items-center gap-2 text-sm bg-slate-700 px-3 py-1 rounded-full">
-                <span class="w-3 h-3 rounded-full bg-red-500" id="status-dot"></span>
-                <span id="status-text">در حال بررسی سرویس‌ها...</span>
+
+            <div
+                id="system-status"
+                class="flex items-center gap-2 text-sm bg-slate-700 px-3 py-2 rounded-full"
+            >
+                <span
+                    class="w-3 h-3 rounded-full bg-red-500"
+                    id="status-dot"
+                ></span>
+
+                <span id="status-text">
+                    در حال بررسی سرویس‌ها...
+                </span>
             </div>
         </div>
     </header>
 
-    <!-- محتوای اصلی -->
+
+    <!-- Main layout -->
     <main class="container mx-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
-        
-        <!-- ستون کنترل و نمایشگر -->
+
+        <!-- Left column -->
         <div class="lg:col-span-2 space-y-6">
-            
-            <!-- پنل تنظیمات ورودی -->
-            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg space-y-4">
-                <h2 class="text-lg font-semibold text-slate-200">کنترل جریان ورودی</h2>
-                
-                <!-- تب‌های انتخاب حالت -->
+
+            <!-- Input controls -->
+            <section class="bg-slate-800 p-4 rounded-xl border
+                            border-slate-700 shadow-lg space-y-4">
+
+                <h2 class="text-lg font-semibold">
+                    کنترل جریان ورودی
+                </h2>
+
+                <!-- Tabs -->
                 <div class="flex flex-wrap gap-2 border-b border-slate-700 pb-3">
-                    <button onclick="switchMode('stream')" id="tab-stream" class="px-3 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white transition">دوربین زنده (RTSP)</button>
-                    <button onclick="switchMode('video')" id="tab-video" class="px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-300 transition">مسیر ویدیو محلی / سرور</button>
-                    <button onclick="switchMode('image')" id="tab-image" class="px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-300 transition">آپلود عکس تکی</button>
+
+                    <button
+                        onclick="switchMode('stream')"
+                        id="tab-stream"
+                        class="px-3 py-2 rounded-lg text-sm font-medium
+                               bg-emerald-600 text-white transition"
+                    >
+                        دوربین زنده RTSP
+                    </button>
+
+                    <button
+                        onclick="switchMode('video')"
+                        id="tab-video"
+                        class="px-3 py-2 rounded-lg text-sm font-medium
+                               bg-slate-700 text-slate-300 transition"
+                    >
+                        آپلود ویدیو
+                    </button>
+
+                    <button
+                        onclick="switchMode('image')"
+                        id="tab-image"
+                        class="px-3 py-2 rounded-lg text-sm font-medium
+                               bg-slate-700 text-slate-300 transition"
+                    >
+                        آپلود تصویر
+                    </button>
+
                 </div>
 
-                <!-- حالت اول: دوربین زنده RTSP -->
+
+                <!-- RTSP mode -->
                 <div id="section-stream" class="space-y-3">
+
                     <div class="flex flex-col sm:flex-row gap-3">
-                        <input type="text" id="stream-url" placeholder="rtsp://127.0.0.1:8554/live" 
-                               class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500"
-                               value="rtsp://127.0.0.1:8554/live">
-                        <div class="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700">
-                            <span class="text-xs text-slate-400">FPS:</span>
-                            <input type="number" id="process-fps" value="10" min="1" max="60" class="w-12 bg-transparent text-center text-sm font-bold focus:outline-none text-emerald-400">
+
+                        <input
+                            type="text"
+                            id="stream-url"
+                            placeholder="rtsp://127.0.0.1:8554/live"
+                            class="flex-1 bg-slate-900 border border-slate-700
+                                   rounded-lg px-4 py-2 text-sm
+                                   focus:outline-none focus:border-emerald-500"
+                        >
+
+                        <div
+                            class="flex items-center gap-2 bg-slate-900
+                                   px-3 py-1.5 rounded-lg border border-slate-700"
+                        >
+                            <span class="text-xs text-slate-400">
+                                FPS پردازش:
+                            </span>
+
+                            <input
+                                type="number"
+                                id="process-fps"
+                                value="10"
+                                min="1"
+                                max="60"
+                                class="w-14 bg-transparent text-center text-sm
+                                       font-bold focus:outline-none text-emerald-400"
+                            >
                         </div>
+
                     </div>
-                    <div>
-                        <button onclick="startStream()" id="btn-start" class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-lg text-sm font-medium transition">
-                            شروع استریم
-                        </button>
-                    </div>
+
+                    <p class="text-xs text-slate-400">
+                        هر دوربین به‌صورت یک استریم مستقل اجرا می‌شود.
+                    </p>
+
+                    <button
+                        onclick="startStream()"
+                        id="btn-start"
+                        class="bg-emerald-600 hover:bg-emerald-500
+                               disabled:opacity-50 text-white px-6 py-2
+                               rounded-lg text-sm font-medium transition"
+                    >
+                        شروع استریم
+                    </button>
+
                 </div>
 
-                <!-- حالت دوم: ویدیوی ضبط شده با مسیر محلی -->
+
+                <!-- Video upload mode -->
                 <div id="section-video" class="hidden space-y-3">
+
                     <div class="flex flex-col sm:flex-row gap-3">
-                        <input type="text" id="video-path-input" placeholder="مسیر کامل فایل ویدیو (مثلا C:/videos/car.mp4)" 
-                               class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500">
-                        <div class="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700">
-                            <span class="text-xs text-slate-400">FPS:</span>
-                            <input type="number" id="video-process-fps" value="10" min="1" max="60" class="w-12 bg-transparent text-center text-sm font-bold focus:outline-none text-emerald-400">
+
+                        <input
+                            type="file"
+                            id="video-file-input"
+                            accept=".mp4,.avi,.mov,.mkv,.webm,.mpeg,.mpg,video/*"
+                            class="flex-1 bg-slate-900 border border-slate-700
+                                   rounded-lg px-3 py-2 text-sm"
+                        >
+
+                        <div
+                            class="flex items-center gap-2 bg-slate-900
+                                   px-3 py-1.5 rounded-lg border border-slate-700"
+                        >
+                            <span class="text-xs text-slate-400">
+                                FPS پردازش:
+                            </span>
+
+                            <input
+                                type="number"
+                                id="video-process-fps"
+                                value="10"
+                                min="1"
+                                max="60"
+                                class="w-14 bg-transparent text-center text-sm
+                                       font-bold text-emerald-400"
+                            >
                         </div>
+
                     </div>
-                    <div>
-                        <button onclick="startVideoFile()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg text-sm font-medium transition">
-                            پردازش فایل ویدیو
-                        </button>
+
+                    <p class="text-xs text-slate-400">
+                        حداکثر حجم فایل ۱ گیگابایت است.
+                        فایل از مرورگر به سرور ارسال می‌شود.
+                    </p>
+
+                    <div
+                        id="upload-progress-container"
+                        class="hidden space-y-2"
+                    >
+                        <div class="w-full bg-slate-700 rounded-full h-2">
+                            <div
+                                id="upload-progress-bar"
+                                class="bg-emerald-500 h-2 rounded-full"
+                                style="width: 0%"
+                            ></div>
+                        </div>
+
+                        <p
+                            id="upload-progress-text"
+                            class="text-xs text-slate-400"
+                        >
+                            در حال آپلود...
+                        </p>
                     </div>
+
+                    <button
+                        onclick="startVideoFile()"
+                        id="btn-upload-video"
+                        class="bg-indigo-600 hover:bg-indigo-500
+                               disabled:opacity-50 text-white px-6 py-2
+                               rounded-lg text-sm font-medium transition"
+                    >
+                        آپلود و شروع پردازش
+                    </button>
+
                 </div>
 
-                <!-- حالت سوم: آپلود عکس تکی -->
-                <div id="section-image" class="hidden flex flex-col sm:flex-row gap-3 items-center">
-                    <input type="file" id="image-file-input" accept="image/*" 
-                           class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm file:bg-slate-800 file:text-slate-200 file:border-0 file:rounded file:px-3 file:py-1 cursor-pointer">
-                    <button onclick="processSingleImage()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition">
+
+                <!-- Single image mode -->
+                <div id="section-image"
+                     class="hidden flex-col sm:flex-row gap-3 items-center">
+
+                    <input
+                        type="file"
+                        id="image-file-input"
+                        accept="image/*"
+                        class="flex-1 bg-slate-900 border border-slate-700
+                               rounded-lg px-3 py-2 text-sm
+                               file:bg-slate-800 file:text-slate-200
+                               file:border-0 file:rounded file:px-3 file:py-1"
+                    >
+
+                    <button
+                        onclick="processSingleImage()"
+                        id="btn-process-image"
+                        class="bg-indigo-600 hover:bg-indigo-500
+                               disabled:opacity-50 text-white px-5 py-2
+                               rounded-lg text-sm font-medium transition"
+                    >
                         تشخیص پلاک تصویر
                     </button>
+
                 </div>
 
-                <!-- دکمه‌ی توقف عمومی (همیشه در دسترس برای استریم و ویدیو) -->
-                <div class="pt-3 border-t border-slate-700 flex justify-end">
-                    <button onclick="stopStream()" id="btn-stop" disabled class="bg-red-600/50 text-white px-6 py-2 rounded-lg text-sm font-medium transition cursor-not-allowed">
-                        توقف کامل پردازش ⏹️
+
+                <!-- Stop selected stream -->
+                <div class="pt-3 border-t border-slate-700 flex justify-between
+                            items-center gap-3">
+
+                    <span
+                        id="selected-stream-label"
+                        class="text-xs text-slate-400 break-anywhere"
+                    >
+                        استریمی انتخاب نشده است
+                    </span>
+
+                    <button
+                        onclick="stopStream()"
+                        id="btn-stop"
+                        disabled
+                        class="bg-red-600/50 text-white px-5 py-2 rounded-lg
+                               text-sm font-medium cursor-not-allowed"
+                    >
+                        توقف استریم انتخاب‌شده ⏹️
                     </button>
-                </div>
-            </div>
 
-            <!-- نمایشگر تصویر / ویدیو -->
-            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
-                <div class="flex justify-between items-center mb-3">
-                    <h2 id="viewer-title" class="text-lg font-semibold text-slate-200">نمایشگر تصویر</h2>
-                    <span id="fps-counter" class="text-xs text-slate-400 bg-slate-900 px-2.5 py-1 rounded">آماده</span>
                 </div>
-                <div class="aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border border-slate-700 relative">
-                    <div id="placeholder-text" class="absolute text-slate-500 text-sm">تصویر یا ویدیو اینجا نمایش داده می‌شود</div>
-                    <img id="live-video-feed" src="" class="w-full h-full object-contain hidden" alt="Feed">
+
+            </section>
+
+
+            <!-- Viewer -->
+            <section class="bg-slate-800 p-4 rounded-xl border
+                            border-slate-700 shadow-lg">
+
+                <div class="flex justify-between items-center mb-3 gap-3">
+
+                    <h2
+                        id="viewer-title"
+                        class="text-lg font-semibold"
+                    >
+                        نمایشگر
+                    </h2>
+
+                    <span
+                        id="fps-counter"
+                        class="text-xs text-slate-400 bg-slate-900
+                               px-2.5 py-1 rounded"
+                    >
+                        آماده
+                    </span>
+
                 </div>
-            </div>
+
+                <div
+                    class="aspect-video bg-black rounded-lg overflow-hidden
+                           flex items-center justify-center border
+                           border-slate-700 relative"
+                >
+
+                    <div
+                        id="placeholder-text"
+                        class="absolute text-slate-500 text-sm text-center px-4"
+                    >
+                        یک استریم را شروع یا از فهرست انتخاب کنید.
+                    </div>
+
+                    <img
+                        id="live-video-feed"
+                        src=""
+                        class="w-full h-full object-contain hidden"
+                        alt="Live feed"
+                    >
+
+                </div>
+
+            </section>
+
+
+            <!-- Stream statistics -->
+            <section class="bg-slate-800 p-4 rounded-xl border
+                            border-slate-700 shadow-lg">
+
+                <h2 class="text-lg font-semibold mb-3">
+                    آمار استریم انتخاب‌شده
+                </h2>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+                    <div class="bg-slate-900 p-3 rounded-lg
+                                border border-slate-700 text-center">
+                        <span class="text-xs text-slate-400 block">
+                            پلاک یکتا
+                        </span>
+
+                        <span
+                            id="stat-total-plates"
+                            class="text-2xl font-bold text-emerald-400"
+                        >
+                            0
+                        </span>
+                    </div>
+
+                    <div class="bg-slate-900 p-3 rounded-lg
+                                border border-slate-700 text-center">
+                        <span class="text-xs text-slate-400 block">
+                            وضعیت
+                        </span>
+
+                        <span
+                            id="stat-status"
+                            class="text-sm font-bold text-amber-400 mt-1 block"
+                        >
+                            غیرفعال
+                        </span>
+                    </div>
+
+                    <div class="bg-slate-900 p-3 rounded-lg
+                                border border-slate-700 text-center">
+                        <span class="text-xs text-slate-400 block">
+                            فریم دریافتی
+                        </span>
+
+                        <span
+                            id="stat-frames-read"
+                            class="text-xl font-bold text-sky-400"
+                        >
+                            0
+                        </span>
+                    </div>
+
+                    <div class="bg-slate-900 p-3 rounded-lg
+                                border border-slate-700 text-center">
+                        <span class="text-xs text-slate-400 block">
+                            فریم پردازش‌شده
+                        </span>
+
+                        <span
+                            id="stat-frames-processed"
+                            class="text-xl font-bold text-indigo-400"
+                        >
+                            0
+                        </span>
+                    </div>
+
+                </div>
+
+                <p
+                    id="stream-error"
+                    class="hidden text-sm text-red-400 mt-3 break-anywhere"
+                ></p>
+
+            </section>
+
         </div>
 
-        <!-- ستون جدول و آمار -->
-        <div class="space-y-6">
-            
-            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg grid grid-cols-2 gap-4">
-                <div class="bg-slate-900 p-3 rounded-lg border border-slate-700 text-center">
-                    <span class="text-xs text-slate-400 block">پلاک‌های منحصربه‌فرد</span>
-                    <span id="stat-total-plates" class="text-2xl font-bold text-emerald-400">0</span>
-                </div>
-                <div class="bg-slate-900 p-3 rounded-lg border border-slate-700 text-center">
-                    <span class="text-xs text-slate-400 block">پردازش</span>
-                    <span id="stat-status" class="text-sm font-bold text-amber-400 mt-1 block">غیرفعال</span>
-                </div>
-            </div>
 
-            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
-                <div class="flex justify-between items-center mb-3">
-                    <h2 class="text-lg font-semibold text-slate-200">تاریخچه پلاک‌های خوانده‌شده</h2>
-                    <button onclick="downloadJson()" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded transition">
+        <!-- Right column -->
+        <div class="space-y-6">
+
+            <!-- Streams list -->
+            <section class="bg-slate-800 p-4 rounded-xl border
+                            border-slate-700 shadow-lg">
+
+                <div class="flex justify-between items-center gap-3 mb-3">
+
+                    <h2 class="text-lg font-semibold">
+                        فهرست استریم‌ها
+                    </h2>
+
+                    <button
+                        onclick="refreshStreams()"
+                        id="btn-refresh-streams"
+                        class="text-xs bg-slate-700 hover:bg-slate-600
+                               px-3 py-2 rounded transition"
+                    >
+                        تازه‌سازی
+                    </button>
+
+                </div>
+
+                <p class="text-xs text-slate-400 mb-3">
+                    هر استریم را جداگانه مشاهده یا متوقف کن.
+                </p>
+
+                <div
+                    id="streams-list"
+                    class="space-y-3"
+                >
+                    <p class="text-sm text-slate-400">
+                        در حال دریافت فهرست...
+                    </p>
+                </div>
+
+            </section>
+
+
+            <!-- Plate history -->
+            <section class="bg-slate-800 p-4 rounded-xl border
+                            border-slate-700 shadow-lg">
+
+                <div class="flex justify-between items-center gap-3 mb-3">
+
+                    <h2 class="text-lg font-semibold">
+                        تاریخچه پلاک‌ها
+                    </h2>
+
+                    <button
+                        onclick="downloadJson()"
+                        class="text-xs bg-indigo-600 hover:bg-indigo-500
+                               text-white px-3 py-2 rounded transition"
+                    >
                         دانلود JSON 📥
                     </button>
+
                 </div>
-                
-                <div class="overflow-y-auto max-h-[400px] rounded-lg border border-slate-700 bg-slate-900">
+
+                <div
+                    class="overflow-y-auto max-h-[450px] rounded-lg
+                           border border-slate-700 bg-slate-900"
+                >
+
                     <table class="w-full text-right text-sm">
+
                         <thead class="bg-slate-800 text-slate-400 sticky top-0">
                             <tr>
                                 <th class="p-3">شناسه / پلاک</th>
@@ -138,231 +489,793 @@
                                 <th class="p-3">زمان ثبت</th>
                             </tr>
                         </thead>
-                        <tbody id="plates-table-body" class="divide-y divide-slate-800">
+
+                        <tbody
+                            id="plates-table-body"
+                            class="divide-y divide-slate-800"
+                        >
                             <tr>
-                                <td colspan="3" class="p-4 text-center text-slate-500">هنوز پلاک جدیدی ثبت نشده است</td>
+                                <td
+                                    colspan="3"
+                                    class="p-4 text-center text-slate-500"
+                                >
+                                    هنوز پلاکی ثبت نشده است
+                                </td>
                             </tr>
                         </tbody>
+
                     </table>
+
                 </div>
-            </div>
+
+            </section>
 
         </div>
+
     </main>
 
+
     <script>
+        // ====================================================
+        // GLOBAL STATE
+        // ====================================================
+
         let currentStreamId = null;
         let pollingInterval = null;
+        let streamsRefreshInterval = null;
+        let imageObjectUrl = null;
 
-        // بررسی خودکار سلامت سرویس‌ها هنگام لود صفحه و تکرار آن هر ۵ ثانیه
+        const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
+
+        const $ = (id) => document.getElementById(id);
+
+
+        // ====================================================
+        // HELPERS
+        // ====================================================
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+
+        async function apiJson(url, options = {}) {
+            const response = await fetch(url, options);
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(
+                    data.detail || `خطای HTTP ${response.status}`
+                );
+            }
+
+            return data;
+        }
+
+
+        function getStatusLabel(status) {
+            const labels = {
+                starting: 'در حال شروع',
+                connecting: 'در حال اتصال',
+                running: 'فعال',
+                reconnecting: 'اتصال مجدد',
+                completed: 'پایان‌یافته',
+                stopped: 'متوقف',
+                failed: 'ناموفق'
+            };
+
+            return labels[status] || status || 'نامشخص';
+        }
+
+
+        function getStatusColor(status) {
+            if (status === 'running') {
+                return 'text-emerald-400';
+            }
+
+            if (status === 'failed') {
+                return 'text-red-400';
+            }
+
+            if (status === 'reconnecting' || status === 'connecting') {
+                return 'text-amber-400';
+            }
+
+            return 'text-slate-400';
+        }
+
+
+        // ====================================================
+        // SYSTEM HEALTH
+        // ====================================================
+
         async function checkSystemHealth() {
             try {
-                const response = await fetch('/health');
-                if (response.ok) {
-                    const data = await response.json();
-                    document.getElementById('status-dot').className = "w-3 h-3 rounded-full bg-emerald-500 animate-pulse";
-                    document.getElementById('status-text').innerText = "Running";
-                } else {
-                    setSystemDown();
-                }
-            } catch (err) {
-                setSystemDown();
+                const data = await apiJson('/health');
+
+                $('status-dot').className =
+                    'w-3 h-3 rounded-full bg-emerald-500 animate-pulse';
+
+                $('status-text').innerText =
+                    `سرویس فعال | ${data.active_streams} استریم فعال`;
+
+            } catch (error) {
+                $('status-dot').className =
+                    'w-3 h-3 rounded-full bg-red-500';
+
+                $('status-text').innerText =
+                    'ارتباط با سرور قطع است';
             }
         }
 
-        function setSystemDown() {
-            document.getElementById('status-dot').className = "w-3 h-3 rounded-full bg-red-500";
-            document.getElementById('status-text').innerText = "Stopped";
-        }
 
-        // اجرای اولیه و تنظیم بررسی دوره‌ای هر ۵ ثانیه
-        checkSystemHealth();
-        setInterval(checkSystemHealth, 5000);
+        // ====================================================
+        // MODE SWITCHING
+        // ====================================================
 
         function switchMode(mode) {
-            const tabStream = document.getElementById('tab-stream');
-            const tabVideo = document.getElementById('tab-video');
-            const tabImage = document.getElementById('tab-image');
-            
-            const secStream = document.getElementById('section-stream');
-            const secVideo = document.getElementById('section-video');
-            const secImage = document.getElementById('section-image');
-            const viewerTitle = document.getElementById('viewer-title');
+            const modes = ['stream', 'video', 'image'];
 
-            tabStream.className = "px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-300 transition";
-            tabVideo.className = "px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-300 transition";
-            tabImage.className = "px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-slate-300 transition";
+            for (const name of modes) {
+                $(`section-${name}`).classList.toggle(
+                    'hidden',
+                    name !== mode
+                );
 
-            secStream.classList.add('hidden');
-            secVideo.classList.add('hidden');
-            secImage.classList.add('hidden');
-
-            if (mode === 'stream') {
-                tabStream.className = "px-3 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white transition";
-                secStream.classList.remove('hidden');
-                viewerTitle.innerText = "نمایشگر دوربین زنده";
-            } else if (mode === 'video') {
-                tabVideo.className = "px-3 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white transition";
-                secVideo.classList.remove('hidden');
-                viewerTitle.innerText = "نمایشگر ویدیوی ضبط شده";
-            } else {
-                tabImage.className = "px-3 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white transition";
-                secImage.classList.remove('hidden');
-                viewerTitle.innerText = "تصویر پردازش‌شده";
+                $(`tab-${name}`).className =
+                    'px-3 py-2 rounded-lg text-sm font-medium transition ' +
+                    (
+                        name === mode
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-700 text-slate-300'
+                    );
             }
+
+            const titles = {
+                stream: 'نمایشگر دوربین زنده',
+                video: 'نمایشگر ویدیوی ضبط‌شده',
+                image: 'تصویر انتخاب‌شده'
+            };
+
+            $('viewer-title').innerText = titles[mode];
         }
 
+
+        // ====================================================
+        // START RTSP STREAM
+        // ====================================================
+
         async function startStream() {
-            const url = document.getElementById('stream-url').value.trim();
-            const fps = parseFloat(document.getElementById('process-fps').value) || 10;
+            const url = $('stream-url').value.trim();
+            const fps = Number($('process-fps').value) || 10;
+
             if (!url) {
                 alert('لطفاً آدرس RTSP را وارد کنید.');
                 return;
             }
-            sendStartRequest(url, fps);
+
+            const button = $('btn-start');
+            button.disabled = true;
+            button.innerText = 'در حال شروع...';
+
+            try {
+                const data = await apiJson('/streams/start', {
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+
+                    body: JSON.stringify({
+                        url,
+                        process_fps: fps
+                    })
+                });
+
+                await selectStream(data.stream_id);
+                await refreshStreams();
+
+            } catch (error) {
+                alert(`شروع استریم ناموفق بود:\n${error.message}`);
+
+            } finally {
+                button.disabled = false;
+                button.innerText = 'شروع استریم';
+            }
         }
+
+
+        // ====================================================
+        // UPLOAD VIDEO
+        // ====================================================
 
         async function startVideoFile() {
-            const path = document.getElementById('video-path-input').value.trim();
-            const fps = parseFloat(document.getElementById('video-process-fps').value) || 10;
-            if (!path) {
-                alert('لطفاً مسیر فایل ویدیویی را وارد کنید.');
+            const input = $('video-file-input');
+            const file = input.files[0];
+            const fps = Number($('video-process-fps').value) || 10;
+
+            if (!file) {
+                alert('ابتدا یک فایل ویدیویی انتخاب کنید.');
                 return;
             }
-            sendStartRequest(path, fps);
-        }
 
-        async function sendStartRequest(sourceUrl, fps) {
+            if (file.size === 0) {
+                alert('فایل انتخاب‌شده خالی است.');
+                return;
+            }
+
+            if (file.size > MAX_VIDEO_BYTES) {
+                alert('حجم فایل بیشتر از ۱ گیگابایت است.');
+                return;
+            }
+
+            const button = $('btn-upload-video');
+
+            button.disabled = true;
+            button.innerText = 'در حال آپلود...';
+
+            $('upload-progress-container').classList.remove('hidden');
+            $('upload-progress-bar').style.width = '0%';
+            $('upload-progress-text').innerText =
+                'در حال ارسال فایل به سرور...';
+
             try {
-                const response = await fetch('/streams/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: sourceUrl, process_fps: fps })
-                });
+                const form = new FormData();
 
-                const data = await response.json();
-                if (data.success) {
-                    currentStreamId = data.stream_id;
-                    
-                    const imgElement = document.getElementById('live-video-feed');
-                    imgElement.src = `/streams/${currentStreamId}/live`;
-                    imgElement.classList.remove('hidden');
-                    document.getElementById('placeholder-text').classList.add('hidden');
+                form.append('file', file);
+                form.append('process_fps', String(fps));
 
-                    document.getElementById('btn-stop').disabled = false;
-                    document.getElementById('btn-stop').classList.remove('bg-red-600/50', 'cursor-not-allowed');
-                    document.getElementById('btn-stop').classList.add('bg-red-600', 'hover:bg-red-500');
+                const data = await uploadVideoWithProgress(form, file.size);
 
-                    document.getElementById('stat-status').innerText = "فعال";
+                $('upload-progress-bar').style.width = '100%';
+                $('upload-progress-text').innerText = 'آپلود کامل شد.';
 
-                    startPolling();
-                } else {
-                    alert('خطا: ' + (data.detail || 'نامشخص'));
-                }
-            } catch (err) {
-                alert('خطای ارتباط با سرور: ' + err.message);
+                await selectStream(data.stream_id);
+                await refreshStreams();
+
+                input.value = '';
+
+            } catch (error) {
+                alert(`آپلود یا شروع پردازش ناموفق بود:\n${error.message}`);
+
+            } finally {
+                button.disabled = false;
+                button.innerText = 'آپلود و شروع پردازش';
+
+                setTimeout(() => {
+                    $('upload-progress-container').classList.add('hidden');
+                }, 1500);
             }
         }
 
-        async function stopStream() {
+
+        function uploadVideoWithProgress(formData, fileSize) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+
+                xhr.open('POST', '/streams/upload-video', true);
+
+                xhr.upload.addEventListener('progress', (event) => {
+                    if (!event.lengthComputable) return;
+
+                    const percent = Math.round(
+                        (event.loaded / event.total) * 100
+                    );
+
+                    $('upload-progress-bar').style.width =
+                        `${percent}%`;
+
+                    $('upload-progress-text').innerText =
+                        `آپلود: ${percent}%`;
+                });
+
+                xhr.onload = () => {
+                    let data = {};
+
+                    try {
+                        data = JSON.parse(xhr.responseText || '{}');
+                    } catch (error) {
+                        reject(new Error('پاسخ سرور قابل‌خواندن نیست.'));
+                        return;
+                    }
+
+                    if (xhr.status < 200 || xhr.status >= 300) {
+                        reject(
+                            new Error(
+                                data.detail || `خطای HTTP ${xhr.status}`
+                            )
+                        );
+                        return;
+                    }
+
+                    resolve(data);
+                };
+
+                xhr.onerror = () => {
+                    reject(new Error('ارتباط هنگام آپلود قطع شد.'));
+                };
+
+                xhr.onabort = () => {
+                    reject(new Error('آپلود لغو شد.'));
+                };
+
+                xhr.send(formData);
+            });
+        }
+
+
+        // ====================================================
+        // SELECT STREAM
+        // ====================================================
+
+        async function selectStream(streamId) {
+            currentStreamId = streamId;
+
+            const img = $('live-video-feed');
+
+            img.src = `/streams/${encodeURIComponent(streamId)}/live?t=${Date.now()}`;
+
+            img.classList.remove('hidden');
+            $('placeholder-text').classList.add('hidden');
+
+            $('selected-stream-label').innerText =
+                `انتخاب‌شده: ${streamId.slice(0, 8)}`;
+
+            $('btn-stop').disabled = false;
+            $('btn-stop').className =
+                'bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-lg text-sm font-medium';
+
+            $('stat-status').innerText = 'در حال اتصال';
+            $('stat-status').className =
+                'text-sm font-bold text-amber-400 mt-1 block';
+
+            $('stream-error').classList.add('hidden');
+
+            startPolling();
+
+            await refreshStreams();
+            await refreshSelectedStreamStats();
+        }
+
+
+        // ====================================================
+        // STOP STREAM
+        // ====================================================
+
+        async function stopStream(streamId = currentStreamId) {
+            if (!streamId) {
+                return;
+            }
+
+            try {
+                await apiJson(
+                    `/streams/${encodeURIComponent(streamId)}/stop`,
+                    { method: 'POST' }
+                );
+
+                if (streamId === currentStreamId) {
+                    currentStreamId = null;
+
+                    if (pollingInterval) {
+                        clearInterval(pollingInterval);
+                        pollingInterval = null;
+                    }
+
+                    $('live-video-feed').src = '';
+                    $('live-video-feed').classList.add('hidden');
+                    $('placeholder-text').classList.remove('hidden');
+
+                    $('selected-stream-label').innerText =
+                        'استریمی انتخاب نشده است';
+
+                    $('btn-stop').disabled = true;
+                    $('btn-stop').className =
+                        'bg-red-600/50 text-white px-5 py-2 rounded-lg text-sm cursor-not-allowed';
+
+                    $('stat-status').innerText = 'متوقف';
+                    $('fps-counter').innerText = 'متوقف';
+                }
+
+                await refreshStreams();
+
+            } catch (error) {
+                alert(`توقف استریم ناموفق بود:\n${error.message}`);
+            }
+        }
+
+
+        // ====================================================
+        // REFRESH STREAM LIST
+        // ====================================================
+
+        async function refreshStreams() {
+            try {
+                const data = await apiJson('/streams');
+
+                renderStreams(data.streams || []);
+
+            } catch (error) {
+                $('streams-list').innerHTML = `
+                    <p class="text-sm text-red-400">
+                        خطا در دریافت فهرست:
+                        ${escapeHtml(error.message)}
+                    </p>
+                `;
+            }
+        }
+
+
+        function renderStreams(streams) {
+            const list = $('streams-list');
+
+            if (!streams.length) {
+                list.innerHTML = `
+                    <p class="text-sm text-slate-400">
+                        هنوز استریمی ایجاد نشده است.
+                    </p>
+                `;
+
+                return;
+            }
+
+            list.innerHTML = streams.map(stream => {
+                const id = escapeHtml(stream.stream_id);
+                const selected = stream.stream_id === currentStreamId;
+                const statusColor = getStatusColor(stream.status);
+
+                const sourceType =
+                    stream.source_type === 'video'
+                        ? 'ویدیو'
+                        : 'دوربین RTSP';
+
+                return `
+                    <div class="stream-card ${
+                        selected ? 'selected' : ''
+                    } rounded-lg border border-slate-700 bg-slate-900 p-3">
+
+                        <div class="flex justify-between items-start gap-2">
+
+                            <div class="min-w-0">
+                                <div class="font-semibold text-sm">
+                                    ${sourceType}
+                                    ·
+                                    ${escapeHtml(stream.stream_id.slice(0, 8))}
+                                </div>
+
+                                <div class="text-xs text-slate-400 mt-1 break-anywhere">
+                                    ${escapeHtml(stream.source)}
+                                </div>
+                            </div>
+
+                            <span class="text-xs whitespace-nowrap ${statusColor}">
+                                ${escapeHtml(getStatusLabel(stream.status))}
+                            </span>
+
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2 text-xs
+                                    text-slate-300 mt-3">
+
+                            <div>
+                                فریم دریافتی:
+                                ${Number(stream.frames_read || 0)}
+                            </div>
+
+                            <div>
+                                فریم پردازش‌شده:
+                                ${Number(stream.frames_processed || 0)}
+                            </div>
+
+                            <div>
+                                پلاک یکتا:
+                                ${Number(stream.unique_plates || 0)}
+                            </div>
+
+                            <div>
+                                FPS پردازش:
+                                ${Number(stream.process_fps || 0)}
+                            </div>
+
+                        </div>
+
+                        ${
+                            stream.error
+                                ? `
+                                    <p class="text-xs text-red-400 mt-2 break-anywhere">
+                                        خطا: ${escapeHtml(stream.error)}
+                                    </p>
+                                  `
+                                : ''
+                        }
+
+                        <div class="flex flex-wrap gap-2 mt-3">
+
+                            <button
+                                onclick="selectStream('${id}')"
+                                class="flex-1 bg-indigo-600 hover:bg-indigo-500
+                                       rounded px-3 py-2 text-xs"
+                            >
+                                مشاهده
+                            </button>
+
+                            <button
+                                onclick="downloadJson('${id}')"
+                                class="bg-slate-700 hover:bg-slate-600
+                                       rounded px-3 py-2 text-xs"
+                            >
+                                دانلود JSON
+                            </button>
+
+                            ${
+                                stream.running
+                                    ? `
+                                        <button
+                                            onclick="stopStream('${id}')"
+                                            class="bg-red-600 hover:bg-red-500
+                                                   rounded px-3 py-2 text-xs"
+                                        >
+                                            توقف
+                                        </button>
+                                      `
+                                    : ''
+                            }
+
+                        </div>
+
+                    </div>
+                `;
+            }).join('');
+        }
+
+
+        // ====================================================
+        // REFRESH SELECTED STREAM STATS AND PLATES
+        // ====================================================
+
+        async function refreshSelectedStreamStats() {
             if (!currentStreamId) return;
-            try {
-                await fetch(`/streams/${currentStreamId}/stop`, { method: 'POST' });
-            } catch (e) {}
-            resetUI();
-        }
 
-        async function processSingleImage() {
-            const fileInput = document.getElementById('image-file-input');
-            if (fileInput.files.length === 0) {
-                alert('لطفاً یک عکس انتخاب کنید.');
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+            const streamId = currentStreamId;
 
             try {
-                const response = await fetch('/process/image', {
-                    method: 'POST',
-                    body: formData
-                });
+                const data = await apiJson('/streams');
 
-                const data = await response.json();
-                if (data.success) {
-                    const imgElement = document.getElementById('live-video-feed');
-                    imgElement.src = URL.createObjectURL(fileInput.files[0]);
-                    imgElement.classList.remove('hidden');
-                    document.getElementById('placeholder-text').classList.add('hidden');
+                const stream = (data.streams || []).find(
+                    item => item.stream_id === streamId
+                );
 
-                    updatePlatesTable(data.detections || []);
-                } else {
-                    alert('خطا در پردازش تصویر');
+                if (!stream || currentStreamId !== streamId) {
+                    return;
                 }
-            } catch (err) {
-                alert('خطای ارتباط با سرور: ' + err.message);
+
+                $('stat-frames-read').innerText =
+                    Number(stream.frames_read || 0);
+
+                $('stat-frames-processed').innerText =
+                    Number(stream.frames_processed || 0);
+
+                $('fps-counter').innerText =
+                    `${Number(stream.process_fps || 0)} FPS`;
+
+                $('stat-status').innerText =
+                    getStatusLabel(stream.status);
+
+                $('stat-status').className =
+                    `text-sm font-bold mt-1 block ${getStatusColor(stream.status)}`;
+
+                if (stream.error) {
+                    $('stream-error').innerText =
+                        `خطا: ${stream.error}`;
+
+                    $('stream-error').classList.remove('hidden');
+                } else {
+                    $('stream-error').classList.add('hidden');
+                }
+
+                if (!stream.running && stream.status !== 'completed') {
+                    // استریم متوقف یا ناموفق شده است.
+                    $('btn-stop').disabled = true;
+                }
+
+                if (stream.status === 'completed') {
+                    $('fps-counter').innerText = 'ویدیو تمام شد';
+                    $('btn-stop').disabled = true;
+                }
+
+                await refreshPlateHistory(streamId);
+
+            } catch (error) {
+                // خطای موقت ارتباطی در به‌روزرسانی آمار.
             }
         }
 
-        function resetUI() {
-            currentStreamId = null;
-            if (pollingInterval) clearInterval(pollingInterval);
 
-            const imgElement = document.getElementById('live-video-feed');
-            imgElement.src = "";
-            imgElement.classList.add('hidden');
-            document.getElementById('placeholder-text').classList.remove('hidden');
+        async function refreshPlateHistory(streamId) {
+            try {
+                const data = await apiJson(
+                    `/streams/${encodeURIComponent(streamId)}/save-json`
+                );
 
-            const btnStop = document.getElementById('btn-stop');
-            btnStop.disabled = true;
-            btnStop.className = "bg-red-600/50 text-white px-6 py-2 rounded-lg text-sm font-medium transition cursor-not-allowed";
+                if (currentStreamId !== streamId) {
+                    return;
+                }
 
-            document.getElementById('stat-status').innerText = "غیرفعال";
+                updatePlatesTable(data.plates || []);
+
+                $('stat-total-plates').innerText =
+                    Number(data.total_unique_plates || 0);
+
+            } catch (error) {
+                // ممکن است استریم در همان لحظه از دسترس خارج شده باشد.
+            }
         }
+
 
         function startPolling() {
-            if (pollingInterval) clearInterval(pollingInterval);
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+
             pollingInterval = setInterval(async () => {
                 if (!currentStreamId) return;
-                try {
-                    const res = await fetch(`/streams/${currentStreamId}/save-json`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        updatePlatesTable(data.plates || []);
-                    }
-                } catch (e) {}
+
+                await refreshSelectedStreamStats();
             }, 3000);
         }
 
-        function updatePlatesTable(plates) {
-            const tbody = document.getElementById('plates-table-body');
-            document.getElementById('stat-total-plates').innerText = plates.length;
 
-            if (plates.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="3" class="p-4 text-center text-slate-500">پلاکی یافت نشد</td></tr>`;
+        // ====================================================
+        // SINGLE IMAGE PROCESSING
+        // ====================================================
+
+        async function processSingleImage() {
+            const input = $('image-file-input');
+            const file = input.files[0];
+
+            if (!file) {
+                alert('لطفاً یک تصویر انتخاب کنید.');
+                return;
+            }
+
+            const button = $('btn-process-image');
+            button.disabled = true;
+            button.innerText = 'در حال پردازش...';
+
+            try {
+                const form = new FormData();
+                form.append('file', file);
+
+                const data = await apiJson('/process/image', {
+                    method: 'POST',
+                    body: form
+                });
+
+                if (imageObjectUrl) {
+                    URL.revokeObjectURL(imageObjectUrl);
+                }
+
+                imageObjectUrl = URL.createObjectURL(file);
+
+                $('live-video-feed').src = imageObjectUrl;
+                $('live-video-feed').classList.remove('hidden');
+                $('placeholder-text').classList.add('hidden');
+
+                $('viewer-title').innerText = 'تصویر انتخاب‌شده';
+                $('fps-counter').innerText = 'پردازش تصویر کامل شد';
+
+                $('stat-status').innerText = 'کامل شد';
+                $('stat-total-plates').innerText =
+                    (data.detections || []).length;
+
+                $('stat-frames-read').innerText = '1';
+                $('stat-frames-processed').innerText = '1';
+
+                updatePlatesTable(data.detections || []);
+
+            } catch (error) {
+                alert(`پردازش تصویر ناموفق بود:\n${error.message}`);
+
+            } finally {
+                button.disabled = false;
+                button.innerText = 'تشخیص پلاک تصویر';
+            }
+        }
+
+
+        // ====================================================
+        // PLATE TABLE
+        // ====================================================
+
+        function updatePlatesTable(plates) {
+            const tbody = $('plates-table-body');
+
+            if (!plates.length) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="3"
+                            class="p-4 text-center text-slate-500">
+                            هنوز پلاکی ثبت نشده است
+                        </td>
+                    </tr>
+                `;
+
                 return;
             }
 
             const sorted = [...plates].reverse();
-            tbody.innerHTML = sorted.map(p => `
-                <tr class="hover:bg-slate-800/50 transition">
-                    <td class="p-3 font-mono font-bold text-emerald-400 text-right">
-                        <bdi style="direction: ltr; unicode-bidi: bidi-override; display: inline-block;">${p.text || '---'}</bdi>
-                        <span class="text-xs text-slate-500 font-normal mr-2">(ID: ${p.plate_id || '-'})</span>
-                    </td>
-                    <td class="p-3 text-slate-300">${p.confidence ? (p.confidence * 100).toFixed(0) + '%' : '---'}</td>
-                    <td class="p-3 text-slate-400 text-xs">${p.timestamp ? new Date(p.timestamp * 1000).toLocaleTimeString('fa-IR') : 'همین الان'}</td>
-                </tr>
-            `).join('');
+
+            tbody.innerHTML = sorted.map(plate => {
+                const plateText = escapeHtml(plate.text || '---');
+                const plateId = Number(plate.plate_id || 0);
+                const confidence = Number(plate.confidence || 0);
+
+                const time = plate.timestamp
+                    ? new Date(
+                        plate.timestamp * 1000
+                    ).toLocaleTimeString('fa-IR')
+                    : '---';
+
+                return `
+                    <tr class="hover:bg-slate-800/50 transition">
+
+                        <td class="p-3 font-mono font-bold text-emerald-400">
+                            <bdi dir="ltr">${plateText}</bdi>
+
+                            <span class="text-xs text-slate-500 font-normal mr-2">
+                                (ID: ${plateId || '-'})
+                            </span>
+                        </td>
+
+                        <td class="p-3 text-slate-300">
+                            ${
+                                confidence
+                                    ? `${(confidence * 100).toFixed(0)}%`
+                                    : '---'
+                            }
+                        </td>
+
+                        <td class="p-3 text-slate-400 text-xs">
+                            ${escapeHtml(time)}
+                        </td>
+
+                    </tr>
+                `;
+            }).join('');
         }
 
-        function downloadJson() {
-            if (!currentStreamId) {
-                alert('فایلی برای دانلود وجود ندارد.');
+
+        // ====================================================
+        // DOWNLOAD JSON
+        // ====================================================
+
+        function downloadJson(streamId = currentStreamId) {
+            if (!streamId) {
+                alert('ابتدا یک استریم انتخاب کنید.');
                 return;
             }
-            window.location.href = `/streams/${currentStreamId}/save-json`;
+
+            window.location.href =
+                `/streams/${encodeURIComponent(streamId)}/save-json`;
         }
+
+
+        // ====================================================
+        // INITIALIZATION
+        // ====================================================
+
+        checkSystemHealth();
+        refreshStreams();
+
+        setInterval(checkSystemHealth, 5000);
+        streamsRefreshInterval = setInterval(refreshStreams, 3000);
+
     </script>
+
 </body>
 </html>
