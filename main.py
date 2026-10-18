@@ -247,6 +247,9 @@ class StreamState:
         self.results = deque(maxlen=MAX_STREAM_RESULTS)
         self.unique_saved_plates = {}
 
+        # شماره‌ی ردیف پیوسته برای نمایش در جدول (جدا از plate_id داخلی ردیاب)
+        self.display_seq = 0
+
         self.frames_read = 0
         self.frames_processed = 0
         self.native_fps = 25.0
@@ -808,7 +811,20 @@ async def stream_worker(stream: StreamState):
                                     det["text"] = track_info["text"]
                                     active_dets.append(det)
 
+                                    # شماره‌ی ردیف فقط هنگام اولین ثبتِ معتبرِ هر پلاک
+                                    # یک واحد بالا می‌رود، پس بدون جهش و پیوسته است.
+                                    existing = stream.unique_saved_plates.get(
+                                        plate_id
+                                    )
+
+                                    if existing is None:
+                                        stream.display_seq += 1
+                                        seq = stream.display_seq
+                                    else:
+                                        seq = existing["seq"]
+
                                     stream.unique_saved_plates[plate_id] = {
+                                        "seq": seq,
                                         "plate_id": plate_id,
                                         "text": track_info["text"],
                                         "confidence": float(

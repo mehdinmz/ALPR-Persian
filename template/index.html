@@ -1319,7 +1319,8 @@
             const sorted = [...plates].reverse();
 
             tbody.innerHTML = sorted.map(plate => {
-                                const plateId = Number(plate.plate_id || 0);
+                                // seq شماره‌ی ردیف پیوسته از بک‌اند است؛ plate_id شناسه‌ی داخلی ردیاب و پر از جهش است
+                const plateId = Number(plate.seq || plate.plate_id || 0);
                 const confidence = Number(plate.confidence || 0);
 
                 const time = plate.timestamp
