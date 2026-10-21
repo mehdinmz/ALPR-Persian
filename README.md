@@ -1,623 +1,619 @@
 # ALPR-Persian
 
-### A Dockerized Iranian License Plate Detection and Recognition Pipeline
+### Dockerized Iranian License Plate Detection & Recognition Pipeline
 
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Docker](https://img.shields.io/badge/Deployment-Docker-2496ED?logo=docker)](https://www.docker.com/)
 [![YOLO](https://img.shields.io/badge/Detection-YOLO-black)](https://www.ultralytics.com/)
 [![OCR](https://img.shields.io/badge/OCR-CRNN%20%2B%20Hezar-6A5ACD)](https://github.com/mehdinmz/ALPR-Persian)
-[![License](https://img.shields.io/badge/License-Not%20specified-lightgrey)](https://github.com/mehdinmz/ALPR-Persian)
+[![License](https://img.shields.io/badge/License-Proprietary-red)](https://github.com/mehdinmz/ALPR-Persian)
 
-ALPR-Persian is a Dockerized automatic license plate recognition system
-for Iranian vehicles. It combines YOLO-based plate detection, CRNN-based
-Persian OCR, and temporal tracking behind a FastAPI gateway, accepting
-images, recorded videos, and live RTSP/RTSPS streams.
+[English](#english) | [فارسی](#فارسی)
 
-> **Reliability principle:** the gateway rejects detections that do not
-> meet its configured plate-length and detection-confidence checks
-> rather than treating every OCR prediction as a confirmed plate. These
-> checks reduce some invalid outputs; they do not guarantee that every
-> accepted plate is correct.
+---
 
-## Contents
+<a name="english"></a>
+## English Documentation
 
--   [Overview](#overview)
--   [Features](#features)
--   [Architecture](#architecture)
--   [Repository Structure](#repository-structure)
--   [Requirements](#requirements)
--   [Quick Start](#quick-start)
--   [API Reference](#api-reference)
--   [Configuration](#configuration)
--   [Performance and Evaluation](#performance-and-evaluation)
--   [Limitations](#limitations)
--   [Roadmap](#roadmap)
--   [Contributing](#contributing)
--   [License](#license)
--   [Contact](#contact)
+### Table of Contents
+1. [Overview](#overview)
+2. [Features](#features)
+3. [Architecture](#architecture)
+4. [Services and Ports](#services-and-ports)
+5. [Repository Structure](#repository-structure)
+6. [Requirements and Hardware Compatibility](#requirements-and-hardware-compatibility)
+7. [Installation and Docker Setup](#installation-and-docker-setup)
+8. [API Reference and Usage](#api-reference-and-usage)
+9. [Configuration Reference](#configuration-reference)
+10. [Detection and OCR Model Information](#detection-and-ocr-model-information)
+11. [Dataset Provenance and Licensing Notes](#dataset-provenance-and-licensing-notes)
+12. [Evaluation and Benchmarking Status](#evaluation-and-benchmarking-status)
+13. [Limitations and Troubleshooting](#limitations-and-troubleshooting)
+14. [Development Roadmap](#development-roadmap)
+15. [Proprietary License](#proprietary-license)
+16. [Contact Information](#contact-information)
 
-## Overview
+---
 
-The project targets vehicle-entry workflows, including fuel-station
-access, where a vehicle needs to be identified within a short decision
-window. The intended decision time is approximately **3--4 seconds per
-vehicle**; this is a target and has not been published as a measured
-benchmark.
+### Overview
 
-The gateway processes images directly or manages video and live camera
-streams. For each frame, it requests plate detections and crops from the
-detection service, sends each crop to the OCR service, filters candidate
-results, tracks observations across frames, and exposes results through
-JSON and a live MJPEG view.
+**ALPR-Persian** is a microservice-based pipeline engineered for automatic license plate detection and optical character recognition (OCR) on Iranian vehicles. Built using FastAPI, Docker, YOLO, and the Hezar deep learning framework, the system provides a unified entry point to process static images, uploaded video files, and real-time RTSP/RTSPS camera streams.
 
-## Features
+> **Reliability Notice:** The system enforces strict gateway-level filtering (minimum detection confidence and an exact 8-character string length requirement). These filters remove invalid candidates but **do not guarantee** that every accepted plate prediction is semantically correct.
 
--   **Iranian plate OCR:** uses a locally stored CRNN model through
-    Hezar.
--   **YOLO plate detection:** detects and crops license plates.
--   **Multiple input types:** still images, uploaded video files, and
-    RTSP/RTSPS streams.
--   **Temporal tracking:** uses bounding-box Intersection over Union
-    (IoU) and text similarity to associate observations.
--   **Conservative filtering:** the gateway drops image detections
-    unless the recognized text has length 8 and the detector confidence
-    meets the configured minimum.
--   **JSON export:** exports per-stream summaries and unique plate
-    records.
--   **Live preview:** provides an MJPEG endpoint for a stream.
--   **Persian annotations:** uses Vazirmatn, `arabic_reshaper`, and
-    `python-bidi` to render Persian text in the dashboard/video
-    annotations.
--   **Separated services:** detection, OCR, and gateway run as separate
-    Docker containers.
--   **GPU detection inference:** the detection container uses CUDA and
-    TensorRT, and can export a TensorRT engine from the included `.pt`
-    model when the engine is missing.
+---
 
-## Architecture
+### Features
 
-``` mermaid
+- **Persian Plate Recognition:** CRNN-based model fine-tuned for Iranian plate characters via the Hezar framework.
+- **YOLO Plate Detection:** Fine-tuned YOLO detection model with TensorRT optimization support.
+- **Multi-Input Ingestion:** Supports single image processing, uploaded recorded videos, and live RTSP/RTSPS network video streams.
+- **Microservice Design:** Decoupled Gateway, Detection, and OCR services operating over a private Docker network.
+- **Temporal Tracking & Filtering:** IoU and string-similarity tracking to correlate detections across video frames.
+- **Live Stream Preview:** Real-time MJPEG preview stream for monitoring active stream tracking.
+- **JSON Exporting:** Structured JSON metadata export for audit logs and downstream database integration.
+- **Persian Text Rendering:** Built-in support for Vazirmatn font, `arabic_reshaper`, and `python-bidi` for correct text layout in visual overlays.
+
+---
+
+### Architecture
+
+```mermaid
 flowchart TD
-    A["Image upload"] --> G["FastAPI Gateway :8000"]
-    B["Video upload"] --> G
-    C["RTSP / RTSPS camera"] --> G
-    G --> D["Detection service :8001<br/>YOLO + TensorRT"]
-    D --> E["Detection metadata + JPEG plate crops<br/>multipart/mixed"]
-    E --> G
-    G --> F["OCR service :8002<br/>Hezar CRNN"]
-    F --> G
-    G --> H["Filtering + temporal tracking<br/>IoU + text similarity"]
-    H --> I["JSON results / JSON export"]
-    H --> J["Live MJPEG preview"]
+    Client["Client / User"] -->|HTTP / REST| Gateway["FastAPI Gateway (:8000)"]
+    
+    subgraph Docker Network [Private Container Network]
+        Gateway -->|POST image crop| OCR["OCR Service (:8002)<br/>Hezar CRNN (CPU)"]
+        Gateway -->|POST frame| Detect["Detection Service (:8001)<br/>YOLO + TensorRT (GPU)"]
+    end
+
+    Detect -->|Multipart Crops & Metadata| Gateway
+    OCR -->|Predicted Text| Gateway
+
+    Gateway -->|MJPEG Stream| Live["Live Dashboard Preview"]
+    Gateway -->|JSON Payload| Export["Stream Summary / JSON Export"]
 ```
 
-### Services
+---
 
-  ---------------------------------------------------------------------------------
-  Service          Container image                   Internal port Responsibility
-  ---------------- ------------------------- --------------------- ----------------
-  Gateway          `alpr-gateway:latest`                    `8000` Public API,
-                                                                   stream
-                                                                   lifecycle, OCR
-                                                                   orchestration,
-                                                                   tracking,
-                                                                   annotations,
-                                                                   JSON export,
-                                                                   dashboard
+### Services and Ports
 
-  Detection        `alpr-detection:latest`                  `8001` YOLO detection,
-                                                                   tracking within
-                                                                   the detection
-                                                                   service, plate
-                                                                   cropping,
-                                                                   multipart
-                                                                   response
+| Service | Internal Port | Host Port | Runtime | Primary Responsibility |
+| :--- | :---: | :---: | :---: | :--- |
+| **Gateway** | `8000` | `8000` | Python 3.12 (CPU) | Orchestration, stream management, temporal tracking, API routes, JSON export, UI. |
+| **Detection** | `8001` | *Unexposed* | Python 3.11 / CUDA 12.8 (GPU) | License plate localization, bounding box tracking, frame cropping, multipart response. |
+| **OCR** | `8002` | *Unexposed* | Python 3.11 (CPU) | Text recognition on cropped plate images using Hezar CRNN. |
 
-  OCR              `alpr-ocr:latest`                        `8002` CRNN inference
-                                                                   through Hezar
-  ---------------------------------------------------------------------------------
+---
 
-Only the gateway port is published to the host by the supplied
-`docker-compose.yml`. The detection and OCR ports are exposed to the
-Docker network and are reached by the gateway using the service names
-`detection` and `ocr`.
+### Repository Structure
 
-## Repository Structure
-
-``` text
+```text
 ALPR-Persian/
-├── main.py
-├── Dockerfile
-├── requirements.txt
-├── docker-compose.yml
+├── main.py                     # Gateway API entrypoint and stream orchestrator
+├── Dockerfile                  # Gateway container manifest
+├── requirements.txt            # Gateway dependencies
+├── docker-compose.yml          # Multi-container service definition
 ├── template/
-│   └── index.html
+│   └── index.html              # Web dashboard template
 ├── detection/
-│   ├── main.py
-│   ├── Dockerfile
+│   ├── main.py                 # Detection FastAPI service
+│   ├── Dockerfile              # GPU-enabled CUDA/TensorRT container manifest
 │   ├── Models/
-│   │   └── license_plate_detector_s.pt
+│   │   └── license_plate_detector_s.pt # Fine-tuned YOLO weights
 │   └── Scripts/
-│       └── exporting_to_trt.py
+│       └── exporting_to_trt.py # TensorRT engine generation script
 └── ocr/
-    ├── main.py
-    ├── Dockerfile
-    ├── requirements.txt
+    ├── main.py                 # OCR FastAPI service
+    ├── Dockerfile              # CPU container manifest
+    ├── requirements.txt        # OCR dependencies
     └── Models/
-        └── crnn-fa-license-plate-recognition-v2/
+        └── crnn-fa-license-plate-recognition-v2/ # Local Hezar CRNN model
 ```
 
-The OCR model directory contains the model and preprocessor files
-expected by Hezar. Keep the complete model directory in the build
-context. The detection image expects the `.pt` weights and export script
-to be present.
+---
 
-## Requirements
+### Requirements and Hardware Compatibility
 
--   Git
--   Docker Engine or Docker Desktop with Docker Compose
--   An NVIDIA GPU supported by the selected CUDA/TensorRT stack for
-    detection
--   NVIDIA Container Toolkit when running Linux containers with GPU
-    access
--   Enough disk space to build the CUDA, PyTorch, ONNX, and TensorRT
-    dependencies and store model artifacts
+#### Tested Hardware
+- **GPU:** NVIDIA GeForce GTX 1650 (4 GB VRAM)
+- **Host OS:** Linux / Windows with Docker Desktop & NVIDIA Container Toolkit
 
-The detection Dockerfile uses a CUDA 12.8 base image, PyTorch CUDA 12.8
-packages, and TensorRT. The OCR Dockerfile installs CPU-only PyTorch.
-The gateway uses Python 3.12; the OCR image uses Python 3.11.
+#### Software Dependencies
+- Docker Engine `20.10+` and Docker Compose `v2+`
+- NVIDIA Driver compatible with CUDA 12.8
+- NVIDIA Container Toolkit (`nvidia-ctk`) for GPU passthrough to the detection service
 
-**Important:** the detection service exports its TensorRT engine at
-startup if `Models/license_plate_detector_s.engine` is absent. This
-export requires a CUDA-capable GPU and may take several minutes.
-TensorRT engines are environment-dependent; validate the generated
-engine on the intended deployment machine.
+---
 
-## Quick Start
+### Installation and Docker Setup
 
-Run these commands from the repository root.
-
-### 1. Clone the repository
-
-``` bash
+#### 1. Clone the Repository
+```bash
 git clone https://github.com/mehdinmz/ALPR-Persian.git
 cd ALPR-Persian
 ```
 
-### 2. Build the three images
-
-The Compose file refers to prebuilt images and does not define `build:`
-contexts, so build each image explicitly:
-
-``` bash
+#### 2. Build Docker Images
+Build the three service containers explicitly:
+```bash
 docker build -t alpr-detection:latest ./detection
 docker build -t alpr-ocr:latest ./ocr
 docker build -t alpr-gateway:latest .
 ```
 
-### 3. Start the services
-
-``` bash
+#### 3. Start Services with Docker Compose
+```bash
 docker compose up -d
-docker compose ps
-docker compose logs --tail=100
 ```
 
-The first detection-service startup may export the TensorRT engine.
-Check its logs if the service does not become available:
+> **Note on TensorRT Engine Export:** On first launch, the detection service checks for `detection/Models/license_plate_detector_s.engine`. If missing, it automatically compiles the `.pt` weights into a TensorRT engine. This process may take several minutes depending on your GPU.
 
-``` bash
+#### 4. Verify Container Status
+```bash
+docker compose ps
 docker compose logs -f detection
 ```
 
-### 4. Open the dashboard and check health
+---
 
--   Dashboard: `http://localhost:8000/`
--   Gateway health: `http://localhost:8000/health`
+### API Reference and Usage
 
-``` bash
-curl http://localhost:8000/health
+All requests are directed to the Gateway service running at `http://localhost:8000`.
+
+#### 1. System Health Check
+```bash
+curl -X GET "http://localhost:8000/health"
+```
+**Response:**
+```json
+{
+  "status": "healthy",
+  "active_streams": 0,
+  "total_streams": 0
+}
 ```
 
-The gateway health response contains `status`, `active_streams`, and
-`total_streams`. The detection and OCR services also define `/health`
-endpoints, but their ports are not published to the host by the default
-Compose file.
-
-### 5. Stop the services
-
-``` bash
-docker compose down
-```
-
-## API Reference
-
-The examples below match the endpoint paths and request fields in the
-current source code. The application does not define a separate
-versioned API prefix.
-
-### Gateway endpoints
-
-  ----------------------------------------------------------------------------------
-  Method                  Endpoint                           Purpose
-  ----------------------- ---------------------------------- -----------------------
-  `GET`                   `/`                                Serves
-                                                             `template/index.html`
-                                                             when present
-
-  `GET`                   `/health`                          Gateway status and
-                                                             stream counts
-
-  `POST`                  `/process/image`                   Process one uploaded
-                                                             image
-
-  `GET`                   `/streams`                         List streams
-
-  `POST`                  `/streams/start`                   Start an RTSP/RTSPS
-                                                             stream
-
-  `POST`                  `/streams/upload-video`            Upload and process a
-                                                             video
-
-  `GET`                   `/streams/{stream_id}/live`        Stream live annotated
-                                                             frames as MJPEG
-
-  `POST`                  `/streams/{stream_id}/stop`        Stop a stream
-
-  `DELETE`                `/streams/{stream_id}`             Delete a stopped stream
-
-  `GET`                   `/streams/{stream_id}/save-json`   Generate and return a
-                                                             JSON file for a stream
-  ----------------------------------------------------------------------------------
-
-FastAPI's interactive documentation is normally available at
-`http://localhost:8000/docs` when enabled by the application.
-
-### Process an image
-
-The endpoint accepts a multipart form field named `file`.
-
-``` bash
+#### 2. Process Single Image
+```bash
 curl -X POST "http://localhost:8000/process/image" \
-  -F "file=@samples/plate.jpg"
+  -F "file=@/path/to/vehicle.jpg"
 ```
-
-Example response shape:
-
-``` json
+**Response:**
+```json
 {
   "success": true,
   "source": "image",
   "detections": [
     {
       "track_id": 1,
-      "bbox": [100, 80, 260, 125],
-      "confidence": 0.91,
+      "bbox": [120, 340, 280, 390],
+      "confidence": 0.92,
       "crop": "plate_1.jpg",
-      "text": "REPLACE_WITH_ACTUAL_PLATE_TEXT"
+      "text": "۱۲ب۳ND۳۴"
     }
   ]
 }
 ```
 
-The values above are illustrative, not a captured response. The image
-endpoint returns `success`, `source`, and a `detections` array. Each
-returned detection is filtered by the gateway's configured minimum plate
-confidence and the requirement that recognized text contain exactly
-eight characters. The `bbox`, confidence, crop name, and text originate
-from pipeline results; do not interpret the example values as a
-benchmark.
+#### 3. Upload and Process Video File
+Supported formats: `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.mpeg`, `.mpg` (Max: 1 GiB).
+```bash
+curl -X POST "http://localhost:8000/streams/upload-video" \
+  -F "file=@/path/to/traffic.mp4" \
+  -F "process_fps=10"
+```
+**Response:**
+```json
+{
+  "success": true,
+  "stream_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "status": "starting",
+  "filename": "traffic.mp4",
+  "size_bytes": 15420100
+}
+```
 
-### Start an RTSP stream
-
-The request body is JSON with `url` and an optional `process_fps` value.
-The default processing FPS is `10.0`; values above `60` are capped, and
-non-positive values fall back to the default.
-
-``` bash
+#### 4. Start RTSP Stream Processing
+```bash
 curl -X POST "http://localhost:8000/streams/start" \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "rtsp://CAMERA_HOST:554/STREAM_PATH",
+    "url": "rtsp://admin:password@190.168.1.100:554/stream1",
     "process_fps": 10
   }'
 ```
 
-Example response:
-
-``` json
-{
-  "success": true,
-  "stream_id": "RETURNED_STREAM_ID",
-  "status": "starting"
-}
+#### 5. View Live MJPEG Stream
+Open in any standard browser:
+```text
+http://localhost:8000/streams/{stream_id}/live
 ```
 
-Use the returned `stream_id` in the stream endpoints below. Replace the
-sample camera URL with a reachable RTSP/RTSPS URL. Do not publish URLs
-containing credentials.
+#### 6. Export Stream Results as JSON
+```bash
+curl -X GET "http://localhost:8000/streams/{stream_id}/save-json" \
+  --output stream_results.json
+```
 
-### Upload a video
+#### 7. Stop and Delete Stream
+```bash
+# Stop stream
+curl -X POST "http://localhost:8000/streams/{stream_id}/stop"
 
-The endpoint accepts a multipart file field named `file` and an optional
-form field named `process_fps`. Supported extensions in the current
-gateway code are `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.mpeg`, and
-`.mpg`. The upload limit is 1 GiB.
+# Delete stream records
+curl -X DELETE "http://localhost:8000/streams/{stream_id}"
+```
 
-``` bash
+---
+
+### Configuration Reference
+
+Gateway settings configured in `main.py` and overridable via environment variables:
+
+| Parameter | Default Value | Description |
+| :--- | :---: | :--- |
+| `DETECTION_URL` | `http://detection:8001` | Detection service endpoint within Docker network. |
+| `OCR_URL` | `http://ocr:8002` | OCR service endpoint within Docker network. |
+| `CONFIDENCE_THRESHOLD` | `0.40` | Min confidence passed to YOLO detection pipeline. |
+| `MIN_PLATE_CONFIDENCE` | `0.50` | Min confidence required to accept plate candidate. |
+| `DEFAULT_PROCESS_FPS` | `10.0` | Frame rate target for video/stream sampling. |
+| `MAX_VIDEO_UPLOAD_BYTES` | `1,073,741,824` | Maximum video file upload size (1 GiB). |
+| `DETECTION_TIMEOUT` | `30.0s` | HTTP timeout for detection requests. |
+| `OCR_TIMEOUT` | `10.0s` | HTTP timeout for OCR inference requests. |
+| `RTSP_RECONNECT_DELAY` | `3.0s` | Delay between RTSP connection retry attempts. |
+| `MAX_RTSP_RECONNECT_ATTEMPTS` | `10` | Maximum consecutive RTSP reconnection attempts. |
+
+---
+
+### Detection and OCR Model Information
+
+- **Detection Model:** YOLO26-based fine-tuned license plate detector.
+  - Filepath: `detection/Models/license_plate_detector_s.pt`
+  - Engine: Auto-generated `license_plate_detector_s.engine` via TensorRT.
+- **OCR Model:** Hezar Persian License Plate Recognition CRNN v2.
+  - Filepath: `ocr/Models/crnn-fa-license-plate-recognition-v2/`
+  - Runtime: PyTorch (CPU mode).
+
+---
+
+### Dataset Provenance and Licensing Notes
+
+- **Detection Dataset:** `[TODO: Specify Ultralytics dataset URL, identifier, and license]`
+- **OCR Dataset:** `[TODO: Specify Hugging Face dataset URL, identifier, and license]`
+
+*Third-party weights and datasets remain subject to their respective creators' licensing terms.*
+
+---
+
+### Evaluation and Benchmarking Status
+
+The pipeline is targeted to operate within a **3–4 second vehicle processing window** for typical vehicle entry scenarios. No official, formal benchmarks have been published yet.
+
+| Metric | Measured Value |
+| :--- | :---: |
+| Full-Plate Exact Match Accuracy | `[TODO: Unmeasured]` |
+| Character Error Rate (CER) | `[TODO: Unmeasured]` |
+| Frame Processing Latency | `[TODO: Unmeasured]` |
+| Ingestion FPS (GTX 1650) | `[TODO: Unmeasured]` |
+
+---
+
+### Limitations and Troubleshooting
+
+1. **Target Latency:** The 3–4 second vehicle window is a operational design target, not a guaranteed throughput metric.
+2. **Character Filtering:** An 8-character length check prevents short/long invalid reads but does not verify if the recognized characters are accurate.
+3. **GPU Requirement:** TensorRT engine generation requires a compatible NVIDIA GPU and NVIDIA Container Toolkit installed on the host.
+4. **Ports:** Detection (`8001`) and OCR (`8002`) services are isolated within the internal Docker network and cannot be accessed directly from the host unless explicitly exposed in `docker-compose.yml`.
+
+---
+
+### Development Roadmap
+
+- [ ] Optimize OCR recognition stability and accuracy on low-resolution crops.
+- [ ] Implement end-to-end latency benchmarks on target edge hardware.
+- [ ] Add native RTSP hardware decoding support using NVDEC.
+- [ ] Implement standardized unit and integration tests across microservices.
+- [ ] Package multi-arch Docker images for deployment on ARM/Jetson platforms.
+
+---
+
+### Proprietary License
+
+**Copyright (c) 2026 Mohammad Mehdi Namazian. All Rights Reserved.**
+
+This repository and its source code are **proprietary**. Standard open-source rights (e.g., MIT, Apache, GPL) are **NOT** granted. Unauthorized copying, distribution, modification, public display, or commercial exploitation of this software without explicit prior written authorization from the copyright holder is strictly prohibited.
+
+- `[TODO: Formally add proprietary LICENSE file to repository root]`
+
+---
+
+### Contact Information
+
+- **Author:** Mohammad Mehdi Namazian
+- **Email:** `mmahdinamazian@gmail.com`
+- **LinkedIn:** [Mohammad Mehdi Namazian](https://www.linkedin.com/in/mohammad-mehdi-namazian)
+- **Repository:** [https://github.com/mehdinmz/ALPR-Persian](https://github.com/mehdinmz/ALPR-Persian)
+
+---
+
+<a name="فارسی"></a>
+## مستندات فارسی
+
+### فهرست مطالب
+۱. [درباره پروژه](#درباره-پروژه)
+۲. [قابلیت‌ها](#قابلیت‌ها)
+۳. [معماری سیستم](#معماری-سیستم)
+۴. [سرویس‌ها و پورت‌ها](#سرویس‌ها-و-پورت‌ها)
+۵. [ساختار مخزن](#ساختار-مخزن)
+۶. [پیش‌نیازها و سخت‌افزار](#پیش‌نیازها-و-سخت‌افزار)
+۷. [راه‌اندازی با داکر](#راه‌اندازی-با-داکر)
+۸. [راهنمای API](#راهنمای-api)
+۹. [تنظیمات و متغیرها](#تنظیمات-و-متغیرها)
+۱۰. [اطلاعات مدل‌ها](#اطلاعات-مدل‌ها)
+۱۱. [مجموعه داده و مجوزها](#مجموعه-داده-و-مجوزها)
+۱۲. [ارزیابی و بنچمارک](#ارزیابی-و-بنچمارک)
+۱۳. [محدودیت‌ها و عیب‌یابی](#محدودیت‌ها-و-عیب‌یابی)
+۱۴. [نقشه راه توسعه](#نقشه-راه-توسعه)
+۱۵. [مجوز مالکیت فکری](#مجوز-مالکیت-فکری)
+۱۶. [اطلاعات تماس](#اطلاعات-تماس)
+
+---
+
+### درباره پروژه
+
+سامانه **ALPR-Persian** یک خط پردازشی مبتنی بر میکروپایپ‌لاین برای تشخیص و بازخوانی خودکار پلاک خودروهای ایرانی است. این سیستم با استفاده از FastAPI، Docker، YOLO و فریم‌ورک هِزار (Hezar) توسعه یافته و امکان پردازش تصویر، ویدیوهای ضبط‌شده و استریم‌های زنده شبکه (RTSP/RTSPS) را فراهم می‌سازد.
+
+> **توجه ایمنی:** سیستم در لایه Gateway از فیلترهای حد آستانه اطمینان و شرط طول دقیق ۸ کاراکتر استفاده می‌کند. این فیلترها ورودی‌های نامعتبر را کاهش می‌دهند اما **صحت ۱۰۰٪ کاراکترهای خوانده‌شده را تضمین نمی‌کنند**.
+
+---
+
+### قابلیت‌ها
+
+- **بازخوانی پلاک ایرانی:** استفاده از مدل CRNN آموزش‌دیده برای کاراکترهای پلاک ایرانی در فریم‌ورک Hezar.
+- **تشخیص پلاک با YOLO:** مدل اختصاصی YOLO به همراه پشتیبانی از موتور TensorRT جهت تسریع پردازش.
+- **ورودی‌های متنوع:** پشتیبانی از عکس، فایل ویدیو و استریم‌های دوربین مداربسته (RTSP/RTSPS).
+- **معماری میکروخدمات:** تفکیک کامل سرویس‌های Gateway، Detection و OCR در کانتینرهای مجزا.
+- **ردیابی زمانی (Temporal Tracking):** استفاده از IoU و شباهت متنی برای تجمیع نتایج در فریم‌های متوالی.
+- **پیش‌نمایش زنده:** ارائه استریم MJPEG برای مشاهده لحظه‌ای باکس‌ها و متن پلاک‌ها.
+- **خروجی JSON:** قابلیت استخراج گزارش‌های ساختاریافته JSON از پلاک‌های ثبت‌شده.
+- **پشتیبانی از فونت و متن فارسی:** بازنویسی صحیح کاراکترهای فارسی با فونت وزیرمتن و کتابخانه‌های `arabic_reshaper` و `python-bidi`.
+
+---
+
+### معماری سیستم
+
+```mermaid
+flowchart TD
+    Client["کاربر / کلاینت"] -->|HTTP / REST| Gateway["درگاه ارتباطی Gateway (:8000)"]
+    
+    subgraph Docker Network [شبکه داخلی داکر]
+        Gateway -->|ارسال برش پلاک| OCR["سرویس OCR (:8002)<br/>Hezar CRNN (پردازنده)"]
+        Gateway -->|ارسال فریم| Detect["سرویس تشخیص (:8001)<br/>YOLO + TensorRT (کارت گرافیک)"]
+    end
+
+    Detect -->|خروجی برش‌ها و دیتای مکانی| Gateway
+    OCR -->|متن پیش‌بینی‌شده| Gateway
+
+    Gateway -->|استریم MJPEG| Live["داشبورد پیش‌نمایش زنده"]
+    Gateway -->|فایل JSON| Export["گزارش خروجی JSON"]
+```
+
+---
+
+### سرویس‌ها و پورت‌ها
+
+| سرویس | پورت داخلی | پورت اصلی (Host) | محیط اجرا | وظیفه اصلی |
+| :--- | :---: | :---: | :---: | :--- |
+| **Gateway** | `8000` | `8000` | Python 3.12 (CPU) | مدیریت استریم‌ها، ردیابی، ارائه API، تولید JSON و داشبورد. |
+| **Detection** | `8001` | *بسته* | Python 3.11 / CUDA 12.8 (GPU) | تشخیص پلاک، برش تصویر، ردیابی باکس‌ها و ارسال Multipart. |
+| **OCR** | `8002` | *بسته* | Python 3.11 (CPU) | خواندن متن پلاک از روی تصویر برش‌خورده با مدل Hezar. |
+
+---
+
+### ساختار مخزن
+
+```text
+ALPR-Persian/
+├── main.py                     # نقطه ورود API سرویس Gateway
+├── Dockerfile                  # فایل ساخت کانتینر Gateway
+├── requirements.txt            # پیش‌نیازهای Gateway
+├── docker-compose.yml          # فایل تعریف سرویس‌های داکر
+├── template/
+│   └── index.html              # قالب داشبورد وب
+├── detection/
+│   ├── main.py                 # API سرویس تشخیص (Detection)
+│   ├── Dockerfile              # فایل ساخت کانتینر CUDA/TensorRT
+│   ├── Models/
+│   │   └── license_plate_detector_s.pt # وزنده‌شده‌های YOLO
+│   └── Scripts/
+│       └── exporting_to_trt.py # اسکریپت تبدیل به TensorRT
+└── ocr/
+    ├── main.py                 # API سرویس پردازش متن (OCR)
+    ├── Dockerfile              # فایل ساخت کانتینر OCR
+    ├── requirements.txt        # پیش‌نیازهای OCR
+    └── Models/
+        └── crnn-fa-license-plate-recognition-v2/ # مدل Hezar
+```
+
+---
+
+### پیش‌نیازها و سخت‌افزار
+
+#### سخت‌افزار تست‌شده
+- **کارت گرافیک:** NVIDIA GeForce GTX 1650 (حافظه ۴ گیگابایت)
+- **سیستم‌عامل:** لینوکس / ویندوز به همراه Docker Desktop و NVIDIA Container Toolkit
+
+#### نرم‌افزارهای مورد نیاز
+- Docker Engine نسخه `20.10+` و Docker Compose نسخه `v2+`
+- درایور NVIDIA سازگار با CUDA 12.8
+- ابزار NVIDIA Container Toolkit جهت اشتراک‌گذاری کارت گرافیک با داکر
+
+---
+
+### راه‌اندازی با داکر
+
+#### ۱. دریافت مخزن
+```bash
+git clone https://github.com/mehdinmz/ALPR-Persian.git
+cd ALPR-Persian
+```
+
+#### ۲. ساخت ایمیج‌های داکر
+```bash
+docker build -t alpr-detection:latest ./detection
+docker build -t alpr-ocr:latest ./ocr
+docker build -t alpr-gateway:latest .
+```
+
+#### ۳. اجرا با Docker Compose
+```bash
+docker compose up -d
+```
+
+> **نکته درباره TensorRT:** در اولین اجرا، سرویس Detection عدم وجود فایل `license_plate_detector_s.engine` را بررسی کرده و فایل `.pt` را به موتور TensorRT تبدیل می‌کند. این فرایند ممکن است چند دقیقه طول بکشد.
+
+#### ۴. بررسی وضعیت کانتینرها
+```bash
+docker compose ps
+docker compose logs -f detection
+```
+
+---
+
+### راهنمای API
+
+تمام درخواست‌ها به سرویس Gateway روی پورت `8000` ارسال می‌شوند.
+
+#### ۱. بررسی سلامت سیستم
+```bash
+curl -X GET "http://localhost:8000/health"
+```
+
+#### ۲. پردازش تک تصویر
+```bash
+curl -X POST "http://localhost:8000/process/image" \
+  -F "file=@/path/to/vehicle.jpg"
+```
+
+#### ۳. آپلود و پردازش ویدیو
+فرمت‌های پشتیبانی‌شده: `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.mpeg`, `.mpg` (حداکثر ۱ گیگابایت).
+```bash
 curl -X POST "http://localhost:8000/streams/upload-video" \
-  -F "file=@samples/vehicle-entry.mp4" \
+  -F "file=@/path/to/traffic.mp4" \
   -F "process_fps=10"
 ```
 
-Example response:
-
-``` json
-{
-  "success": true,
-  "stream_id": "RETURNED_STREAM_ID",
-  "status": "starting",
-  "filename": "vehicle-entry.mp4",
-  "size_bytes": 12345678
-}
+#### ۴. شروع استریم زنده RTSP
+```bash
+curl -X POST "http://localhost:8000/streams/start" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "rtsp://admin:password@190.168.1.100:554/stream1",
+    "process_fps": 10
+  }'
 ```
 
-The byte count above is only an example. Use the returned `stream_id` to
-inspect, preview, stop, or export the stream.
-
-### List streams
-
-``` bash
-curl "http://localhost:8000/streams"
+#### ۵. مشاهده پیش‌نمایش زنده MJPEG
+در مرورگر وارد آدرس زیر شوید:
+```text
+http://localhost:8000/streams/{stream_id}/live
 ```
 
-The response contains a `streams` array with public stream state
-information.
-
-### View a live stream
-
-Open the following URL in a browser or an MJPEG-compatible client:
-
-``` text
-http://localhost:8000/streams/STREAM_ID/live
+#### ۶. دریافت خروجی JSON
+```bash
+curl -X GET "http://localhost:8000/streams/{stream_id}/save-json" \
+  --output stream_results.json
 ```
 
-Replace `STREAM_ID` with the ID returned when the stream was started.
+#### ۷. توقف و حذف استریم
+```bash
+# توقف استریم
+curl -X POST "http://localhost:8000/streams/{stream_id}/stop"
 
-### Stop and delete a stream
-
-Stop the stream first:
-
-``` bash
-curl -X POST "http://localhost:8000/streams/STREAM_ID/stop"
+# حذف اطلاعات استریم
+curl -X DELETE "http://localhost:8000/streams/{stream_id}"
 ```
 
-Then delete it:
+---
 
-``` bash
-curl -X DELETE "http://localhost:8000/streams/STREAM_ID"
-```
+### تنظیمات و متغیرها
 
-The gateway rejects deletion while a stream is still running. A missing
-stream returns HTTP `404`; attempting to delete a running stream returns
-HTTP `409`.
+مقادیر پیش‌فرض تنظیم‌شده در `main.py`:
 
-### Export stream results as JSON
+| پارامتر | مقدار پیش‌فرض | توضیح |
+| :--- | :---: | :--- |
+| `DETECTION_URL` | `http://detection:8001` | آدرس سرویس تشخیص در شبکه داکر. |
+| `OCR_URL` | `http://ocr:8002` | آدرس سرویس OCR در شبکه داکر. |
+| `CONFIDENCE_THRESHOLD` | `0.40` | حد آستانه اطمینان مدل YOLO. |
+| `MIN_PLATE_CONFIDENCE` | `0.50` | حداقل اطمینان پذیرش پلاک در درگاه. |
+| `DEFAULT_PROCESS_FPS` | `10.0` | نرخ فریم پردازش ویدیو و استریم. |
+| `MAX_VIDEO_UPLOAD_BYTES` | `1,073,741,824` | حداکثر حجم ویدیو (۱ گیگابایت). |
+| `DETECTION_TIMEOUT` | `30.0s` | تایم‌اوت درخواست‌های تشخیص. |
+| `OCR_TIMEOUT` | `10.0s` | تایم‌اوت درخواست‌های OCR. |
 
-``` bash
-curl -L \
-  "http://localhost:8000/streams/STREAM_ID/save-json" \
-  -o plates.json
-```
+---
 
-The endpoint generates a JSON file containing stream metadata and unique
-saved plate records. The file includes fields such as `stream_id`,
-`source`, `status`, `total_unique_plates`, `frames_read`,
-`frames_processed`, `error`, and `plates`.
+### اطلاعات مدل‌ها
 
-### Detection service
+- **مدل تشخیص (Detection):** مدل YOLO26 آموزش‌دیده روی پلاک‌های ایرانی.
+  - مسیر: `detection/Models/license_plate_detector_s.pt`
+  - موتور شتاب‌دهنده: `license_plate_detector_s.engine`
+- **مدل بازخوانی متن (OCR):** مدل Hezar CRNN نسخه ۲.
+  - مسیر: `ocr/Models/crnn-fa-license-plate-recognition-v2/`
 
-`POST /detect` accepts an image as a multipart field named `file`. It
-returns a `multipart/mixed` response containing JSON metadata and JPEG
-plate crops; it does **not** return a plain JSON body.
+---
 
-The metadata contains a `detections` array with fields including
-`track_id`, `bbox`, `confidence`, and `crop`. The gateway parses this
-multipart response and forwards the crops to OCR.
+### مجموعه داده و مجوزها
 
-The detection port is internal to Docker by default. To test this
-service directly from the host, you would need to publish port `8001` in
-a local Compose override.
+- **داده‌های Detection:** `[TODO: ثبت آدرس و مجوز داتاست Ultralytics]`
+- **داده‌های OCR:** `[TODO: ثبت آدرس و مجوز داتاست Hugging Face]`
 
-### OCR service
+---
 
-`POST /predict` accepts a plate-crop image as a multipart field named
-`file` and returns JSON in the form:
+### ارزیابی و بنچمارک
 
-``` json
-{
-  "text": "MODEL_PREDICTION"
-}
-```
+بازه زمانی هدف برای پردازش هر خودرو **۳ الی ۴ ثانیه** در ورودی‌ها تعریف شده است. تاکنون بنچمارک رسمی برای این مخزن ثبت نشده است.
 
-`GET /health` returns the OCR service status and selected device. The
-OCR port is internal to Docker by default.
+| معیار | مقدار اندازه‌گیری‌شده |
+| :--- | :---: |
+| دقت تطابق کامل پلاک | `[TODO: ثبت نشده]` |
+| نرخ خطای کاراکتر (CER) | `[TODO: ثبت نشده]` |
+| نرخ فریم بر ثانیه (FPS) | `[TODO: ثبت نشده]` |
 
-## Configuration
+---
 
-The gateway's current values are defined in `main.py`:
+### محدودیت‌ها و عیب‌یابی
 
-  --------------------------------------------------------------------------------------
-  Setting                                        Current value Meaning
-  ------------------------------- ---------------------------- -------------------------
-  `DETECTION_URL`                   `http://127.0.0.1:8001` by Detection service URL;
-                                                       default overridden to
-                                                               `http://detection:8001`
-                                                               in Compose
+۱. زمان پردازش ۳–۴ ثانیه یک **هدف طراحی** است و بستگی به سخت‌افزار اجرا دارد.
+۲. شرط ۸ کاراکتر تنها از ورود پلاک‌های ناقص جلوگیری می‌کند و صحت حروف خوانده‌شده را تضمین نمی‌کند.
+۳. تبدیل به TensorRT نیازمند کارت گرافیک NVIDIA و نصب NVIDIA Container Toolkit است.
 
-  `OCR_URL`                         `http://127.0.0.1:8002` by OCR service URL;
-                                                       default overridden to
-                                                               `http://ocr:8002` in
-                                                               Compose
+---
 
-  `CONFIDENCE_THRESHOLD`                                `0.40` Detection service
-                                                               confidence threshold used
-                                                               by the gateway pipeline
-                                                               configuration
+### نقشه راه توسعه
 
-  `MIN_PLATE_CONFIDENCE`                                `0.50` Minimum detection
-                                                               confidence accepted by
-                                                               the gateway's image
-                                                               result filter
+- [ ] بهبود دقت خوانش OCR در تصاویر کم‌کیفیت و تار.
+- [ ] اندازه‌گیری و ثبت بنچمارک دقیق زمان تأخیر (Latency) روی سخت‌افزار هدف.
+- [ ] افزودن قابلیت رمزکشی سخت‌افزاری استریم RTSP با NVDEC.
+- [ ] نگارش تست‌های خودکار برای APIها و کانتینرها.
 
-  `DEFAULT_PROCESS_FPS`                                 `10.0` Default video/stream
-                                                               processing rate
+---
 
-  `MAX_STREAM_RESULTS`                                   `500` Maximum recent results
-                                                               held per stream
+### مجوز مالکیت فکری
 
-  `MAX_VIDEO_UPLOAD_BYTES`                             `1 GiB` Maximum uploaded video
-                                                               size
+**حقوق نشر (c) ۲۰۲۶ محمد مهدی نمازیان. تمامی حقوق محفوظ است.**
 
-  `DETECTION_TIMEOUT`                             `30 seconds` Detection HTTP read/write
-                                                               timeout
+این پروژه **اختصاصی (Proprietary)** است. هیچ‌گونه مجوز متن‌باز (مانند MIT، Apache یا GPL) برای این مخزن صادر نشده است. هرگونه کپی‌برداری، تغییر، توزیع یا استفاده تجاری بدون دریافت مجوز مکتوب از مالک اثر ممنوع می‌باشد.
 
-  `OCR_TIMEOUT`                                   `10 seconds` OCR HTTP timeout
+- `[TODO: افزودن رسمی فایل LICENSE اختصاصی به ریشه مخزن]`
 
-  `RTSP_RECONNECT_DELAY`                           `3 seconds` Delay between RTSP
-                                                               reconnect attempts
+---
 
-  `MAX_RTSP_RECONNECT_ATTEMPTS`                           `10` Maximum reconnect
-                                                               attempts
+### اطلاعات تماس
 
-  `PRE_BUFFER_FRAMES`                                    `150` Playback pre-buffer
-                                                               setting
-
-  `PLAYBACK_QUEUE_SIZE`                                  `900` Playback queue capacity
-  --------------------------------------------------------------------------------------
-
-The gateway tracker associates detections when IoU is greater than
-`0.40` or text similarity is greater than `0.50`. Its text similarity is
-calculated with Python's `difflib.SequenceMatcher`.
-
-These are implementation settings, not evidence that the resulting
-system meets a particular accuracy or latency target. Update this table
-whenever the source configuration changes.
-
-### Model and runtime configuration
-
--   Detection weights: `detection/Models/license_plate_detector_s.pt`
--   Detection engine: `detection/Models/license_plate_detector_s.engine`
--   TensorRT export script: `detection/Scripts/exporting_to_trt.py`
--   OCR model directory:
-    `ocr/Models/crnn-fa-license-plate-recognition-v2/`
-
-The detection container uses CUDA 12.8, PyTorch `2.11.0`, Ultralytics
-`8.4.173`, and TensorRT from the `tensorrt-cu12` package. The OCR
-container installs CPU-only PyTorch and Hezar `0.44.0`. Refer to the
-Dockerfiles and requirements files for the full pinned dependency list.
-
-## Performance and Evaluation
-
-The intended decision window is approximately **3--4 seconds per
-vehicle**. This is a project target, not a measured result. No accuracy,
-latency, or FPS claim is made here because reproducible benchmark
-results have not been included.
-
-  Metric                            Result
-  --------------------------------- --------------------------
-  Full-plate exact-match accuracy   `[TODO: measured value]`
-  Character error rate (CER)        `[TODO: measured value]`
-  Detection precision               `[TODO: measured value]`
-  Detection recall                  `[TODO: measured value]`
-  False acceptance rate             `[TODO: measured value]`
-  False rejection rate              `[TODO: measured value]`
-  End-to-end latency per vehicle    `[TODO: measured value]`
-  Throughput (FPS)                  `[TODO: measured value]`
-  Evaluation dataset size           `[TODO: measured value]`
-  Deployment GPU and runtime        `[TODO: measured value]`
-
-### Evaluation protocol
-
-1.  Use a labeled dataset representative of the intended cameras and
-    operating conditions.
-2.  Keep training and evaluation samples separate.
-3.  Include different lighting, viewing angles, distances, blur levels,
-    and plate visibility.
-4.  Report full-plate exact match separately from character-level
-    metrics.
-5.  Measure false acceptances and false rejections, not accuracy alone.
-6.  Measure end-to-end latency on the actual deployment hardware,
-    including detection, OCR, tracking, and result delivery.
-7.  Record model versions, thresholds, test-set size, and runtime
-    versions with each benchmark.
-
-A plate with an incorrect character is an incorrect full-plate result.
-The current length and confidence checks are filters, not a guarantee of
-semantic correctness. The system needs measured false-acceptance results
-before it can be relied on for unattended access decisions.
-
-## Limitations
-
--   The target latency has not been validated by a published end-to-end
-    benchmark.
--   A text-length check cannot establish that a plate is valid or
-    correctly recognized.
--   Detection confidence is not the same as OCR confidence or full-plate
-    correctness.
--   Tracking can help associate observations but cannot independently
-    prove the plate text is correct.
--   Poor lighting, blur, occlusion, small plate crops, and unusual
-    camera angles can reduce performance.
--   TensorRT engine creation requires a compatible NVIDIA GPU and
-    runtime; an engine should be validated on the target machine.
--   RTSP reliability depends on camera settings, network quality, and
-    stream decoder behavior.
--   The default Compose file does not publish the detection and OCR
-    ports directly to the host.
--   Production deployment requires testing on representative real-world
-    footage and the target hardware.
-
-## Roadmap
-
--   [ ] Build a labeled evaluation set for Iranian vehicle plates.
--   [ ] Publish reproducible exact-match, CER, false-acceptance, and
-    false-rejection measurements.
--   [ ] Measure end-to-end latency on target deployment hardware.
--   [ ] Improve OCR stability across consecutive frames without
-    accepting conflicting readings as confirmed.
--   [ ] Add automated tests for API contracts, malformed inputs, and
-    rejected plates.
--   [ ] Test RTSP reconnect behavior under real network interruptions.
--   [ ] Document a tested TensorRT build and deployment matrix.
--   [ ] Publish a short demo showing detection, Persian OCR, tracking,
-    and rejection behavior.
-
-## Contributing
-
-Bug reports and contributions that improve recognition correctness,
-reproducibility, testing, or deployment reliability are welcome.
-
-1.  Include reproduction steps for reported bugs.
-2.  Add or update tests when changing behavior.
-3.  Document API or configuration changes.
-4.  Do not commit credentials, private camera URLs, or datasets/model
-    artifacts unless their inclusion is intentional and legally
-    permitted.
-
-## License
-
-No license terms are stated here. Check the repository's `LICENSE` file
-before reusing or redistributing the code. If the repository does not
-contain a license, do not assume that reuse is permitted.
-
-## Contact
-
--   **Author:** Mehdi Namazian
--   **GitHub:** [@mehdinmz](https://github.com/mehdinmz)
--   **Repository:**
-    [ALPR-Persian](https://github.com/mehdinmz/ALPR-Persian)
--   **Issues:** [GitHub
-    Issues](https://github.com/mehdinmz/ALPR-Persian/issues)
--   **Email:** `[TODO: add preferred public contact email]`
+- **توسعه‌دهنده:** محمد مهدی نمازیان
+- **ایمیل:** `mmahdinamazian@gmail.com`
+- **لینکدین:** [Mohammad Mehdi Namazian](https://www.linkedin.com/in/mohammad-mehdi-namazian)
+- **مخزن گیت‌هاب:** [https://github.com/mehdinmz/ALPR-Persian](https://github.com/mehdinmz/ALPR-Persian)
