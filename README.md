@@ -203,7 +203,7 @@ Response:
       "bbox": [120, 340, 280, 390],
       "confidence": 0.92,
       "crop": "plate_1.jpg",
-      "text": "۱۲ب۳ND۳۴"
+      "text": "۱۲ ب ۳۴۵ ایران ۶۷"
     }
   ]
 }
@@ -237,7 +237,7 @@ Response:
 curl -X POST "http://localhost:8000/streams/start" \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "rtsp://admin:password@190.168.1.100:554/stream1",
+    "url": "rtsp://admin:password@192.168.1.100:554/stream1",
     "process_fps": 10
   }'
 ```
@@ -527,7 +527,7 @@ curl -X POST "http://localhost:8000/streams/upload-video" \
 curl -X POST "http://localhost:8000/streams/start" \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "rtsp://admin:password@190.168.1.100:554/stream1",
+    "url": "rtsp://admin:password@192.168.1.100:554/stream1",
     "process_fps": 10
   }'
 ```
